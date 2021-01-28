@@ -1,6 +1,7 @@
 #define OLC_PGE_APPLICATION
 #define _USE_MATH_DEFINES
 #include "olcPixelGameEngine.h"
+#include <stack>
 
 
 template<typename T>
@@ -53,47 +54,47 @@ typedef v3d_generic<double> vd3d;
 const uint32_t emptyVoxel = 0;
 
 
-struct svo_base {
-
-};
-
-
 struct svo_object {
-	uint8_t size;	// ?
 	olc::Pixel color = olc::Pixel(emptyVoxel);
 	std::vector<svo_object> childs;
-	svo_object* parent;
-	uint8_t used_childs_mask;
-
-	svo_object* create_childs() {
-		childs.resize(8);
-		childs[0].parent = this;
-		childs[1].parent = this;
-		childs[2].parent = this;
-		childs[3].parent = this;
-		childs[4].parent = this;
-		childs[5].parent = this;
-		childs[6].parent = this;
-		childs[7].parent = this;
-	}
-};
-
-
-class game_object {
-	vu3d size;
-	vd3d pos;
-};
-
-
-template<typename T>
-struct octree_node {
-	olc::Pixel color = olc::Pixel(emptyVoxel);
-	std::vector<T> items;
-	std::vector<octree_node> childs;
-	octree_node* parent = nullptr;
+	svo_object* parent = nullptr;
 	uint32_t depth = 1;
-	uint8_t used_childs_mask;
+	uint8_t used_childs_mask = 0x00;
 
+	void set_used_child(svo_object* child) {
+		if (child == &childs[0]) {
+			used_childs_mask |= 0x01;
+			return;
+		}
+		if (child == &childs[1]) {
+			used_childs_mask |= 0x02;
+			return;
+		}
+		if (child == &childs[2]) {
+			used_childs_mask |= 0x04;
+			return;
+		}
+		if (child == &childs[3]) {
+			used_childs_mask |= 0x08;
+			return;
+		}
+		if (child == &childs[4]) {
+			used_childs_mask |= 0x10;
+			return;
+		}
+		if (child == &childs[5]) {
+			used_childs_mask |= 0x20;
+			return;
+		}
+		if (child == &childs[6]) {
+			used_childs_mask |= 0x40;
+			return;
+		}
+		if (child == &childs[7]) {
+			used_childs_mask |= 0x80;
+			return;
+		}
+	}
 	bool create_childs() {
 		if (depth == 1)
 			return false;
@@ -118,59 +119,78 @@ struct octree_node {
 		childs[7].parent = this;
 		childs[7].depth = child_depth;
 
+		if (parent != nullptr)
+			parent->set_used_child(this);
+
 		return true;
 	}
-	//void create_depth(uint32_t depth) {
-	//	if (depth == 0)
-	//		return;
-	//	depth -= 1;
-	//	create_childs();
-	//	childs[0].create_depth(depth);
-	//	childs[1].create_depth(depth);
-	//	childs[2].create_depth(depth);
-	//	childs[3].create_depth(depth);
-	//	childs[4].create_depth(depth);
-	//	childs[5].create_depth(depth);
-	//	childs[6].create_depth(depth);
-	//	childs[7].create_depth(depth);
-	//}
+};
+
+
+class GameObject {
+	vu3d size;
+	vd3d pos;
+};
+
+
+template<typename T>
+struct octree_node {
+	std::vector<T> items;
+	svo_object svo;
 };
 
 
 class Space3D {
-	octree_node<game_object> space;
+	octree_node<GameObject> space;
 	vu3d size;
 	vi3d pos;
+	vi3d oppositePos;
 
 public:
+	Space3D() {}
 	Space3D(vi3d&& coords, vu3d&& sizes) {
 		size = sizes;
 		pos = coords;
+		oppositePos = pos + size;
 
 		uint32_t maxSide = std::max(size.x, std::max(size.y, size.z));
 		uint32_t depth = 1;
 		uint32_t boxSide = 1;
-		while (true) {
-			if (boxSide >= maxSide)
-				break;
+		while (boxSide < maxSide) {
 			depth += 1;
 			boxSide <<= 1;
 		}
-		space.depth = depth;
+		space.svo.depth = depth;
 	}
+
+	void InitFrom(svo_object& svo) {
+		// todo: sizes
+		space.svo = svo;
+	}
+
+	vu3d Size() const { return size; }
+	vi3d Pos() const { return pos; }
+	vi3d OPos() const { return oppositePos; }
+
+	uint32_t Depth() const { return space.svo.depth; }
 };
 
 
-class camera {
-	double x, y, z;
+class Camera {
+
+public:
+	vd3d pos;
 	double hAngle, vAngle;
 	const double move_speed = 0.1;
 	const double turn_speed = 0.001;
-	const double fov = M_PI / 2;	// 90 degree
+	const double fovH = M_PI / 2;	// 90 degree
+	const double fovV = M_PI / 3;	// 60 degree
 
 public:
-	camera(double _x, double _y, double _z)
-		: x(_x), y(_y), z(_z), hAngle(0.0), vAngle(0.0) {}
+	Camera()
+		: pos(0.0, 0.0, 0.0), hAngle(0.0), vAngle(0.0) {}
+	Camera(double _x, double _y, double _z)
+		: pos(_x, _y, _z), hAngle(0.0), vAngle(0.0) {}
 
 public:
 	void turnRight() {
@@ -191,36 +211,26 @@ public:
 	}
 
 	void moveW() {
-		x += move_speed * std::cos(hAngle) * std::cos(vAngle);
-		y += move_speed                    * std::sin(vAngle);
-		z += move_speed * std::sin(hAngle) * std::cos(vAngle);
+		pos.x += move_speed * std::cos(hAngle) * std::cos(vAngle);
+		pos.y += move_speed                    * std::sin(vAngle);
+		pos.z += move_speed * std::sin(hAngle) * std::cos(vAngle);
 	}
 	void moveA() {
 		double _hAngle = hAngle + M_PI / 2.0;
-		x += move_speed * std::cos(_hAngle) * std::cos(vAngle);
-		y += move_speed * std::sin(vAngle);
-		z += move_speed * std::sin(_hAngle) * std::cos(vAngle);
+		pos.x += move_speed * std::cos(_hAngle) * std::cos(vAngle);
+		pos.y += move_speed * std::sin(vAngle);
+		pos.z += move_speed * std::sin(_hAngle) * std::cos(vAngle);
 	}
 	void moveS() {
-		x -= move_speed * std::cos(hAngle) * std::cos(vAngle);
-		y -= move_speed                    * std::sin(vAngle);
-		z -= move_speed * std::sin(hAngle) * std::cos(vAngle);
+		pos.x -= move_speed * std::cos(hAngle) * std::cos(vAngle);
+		pos.y -= move_speed                    * std::sin(vAngle);
+		pos.z -= move_speed * std::sin(hAngle) * std::cos(vAngle);
 	}
 	void moveD() {
 		double _hAngle = hAngle - M_PI / 2.0;
-		x += move_speed * std::cos(_hAngle) * std::cos(vAngle);
-		y += move_speed * std::sin(vAngle);
-		z += move_speed * std::sin(_hAngle) * std::cos(vAngle);
-	}
-
-	double X() const {
-		return x;
-	}
-	double Y() const {
-		return y;
-	}
-	double Z() const {
-		return z;
+		pos.x += move_speed * std::cos(_hAngle) * std::cos(vAngle);
+		pos.y += move_speed * std::sin(vAngle);
+		pos.z += move_speed * std::sin(_hAngle) * std::cos(vAngle);
 	}
 
 	vd3d norm_direction() const {
@@ -241,13 +251,28 @@ public:
 
 
 protected:
-	//game_object test_object;
-	camera player_view = camera(-10.0, 0.0, 0.0);
-	Space3D sapce = { { 0, 0, 0 }, { 16, 16, 16 } };
+	Camera player_view = Camera(-10.0, 0.0, 0.0);
+	Space3D space;
+	std::vector<double> vAngles;
+	std::vector<olc::vd2d> xzComponents;
+	std::vector<octree_node<GameObject>*> octree_node_stack;
+	uint32_t st_index;
 
 
-public:
+protected:
 	bool OnUserCreate() override {
+		svo_object svo;
+		svo.depth = 2;
+		svo.create_childs();
+		svo.childs[0].color = olc::RED;
+		svo.childs[2].color = olc::RED;
+		space.InitFrom(svo);
+
+		vAngles.resize(ScreenHeight());
+		xzComponents.resize(ScreenWidth());
+
+		octree_node_stack.resize(space.Depth() * (size_t)4);
+
 		return true;
 	}
 
@@ -270,20 +295,75 @@ public:
 		// Render
 		Clear(olc::BLACK);
 
-		/*
-		for pixel:
-			
-		*/
+		double leftAngle = player_view.hAngle - player_view.fovH / 2.0;
+		double rightAngle = player_view.hAngle + player_view.fovH / 2.0;
+		double bottomAngle = player_view.vAngle - player_view.fovV / 2.0;
+		double upperAngle = player_view.vAngle + player_view.fovV / 2.0;
+
+		double vDelta = (upperAngle - bottomAngle) / ScreenHeight();
+		double hDelta = (rightAngle - leftAngle) / ScreenWidth();
+		for (int i = 0; i < ScreenHeight(); i++) {
+			vAngles[i] = bottomAngle + i * vDelta;
+		}
+		for (int i = 0; i < ScreenWidth(); i++) {
+			double hAngle = leftAngle + i * hDelta;
+			xzComponents[i] = { cos(hAngle), sin(hAngle) };
+		}
+
+		for (double vAngle : vAngles) {
+			double rayY = sin(vAngle);
+			double xzLength = cos(vAngle);
+			for (olc::vd2d& xzDir : xzComponents) {
+				vd3d rayDir = { xzDir.x * xzLength, rayY, xzDir.y * xzLength };
+				//                                     ^^^^^^^ <- zComponent
+				vd3d raySource = player_view.pos + rayDir;
+
+				calcRay(raySource, rayDir);
+			}
+		}
 
 		std::stringstream coords;
-		coords << "X: " << player_view.X() << '\n';
-		coords << "Y: " << player_view.Y() << '\n';
-		coords << "Z: " << player_view.Z() << '\n';
+		coords << "pos: " << player_view.pos.str() << '\n';
 		coords << "dir: " << player_view.norm_direction().str() << '\n';
 		DrawString(0, 0, coords.str());
 
 
 		return true;
+	}
+
+
+protected:
+	inline void calcRay(vd3d& raySource, vd3d& rayDir) {
+		vd3d invRay = vd3d{ 1, 1, 1 } / rayDir;
+
+		double t1 = (space.Pos().x - raySource.x) * invRay.x;
+		double t2 = (space.OPos().x - raySource.x) * invRay.x;
+		double tmin = std::min(t1, t2);
+		double tmax = std::max(t1, t2);
+
+		t1 = (space.Pos().y - raySource.y) * invRay.y;
+		t2 = (space.OPos().y - raySource.y) * invRay.y;
+		tmin = std::max(tmin, std::min(t1, t2));
+		tmax = std::min(tmax, std::max(t1, t2));
+
+		t1 = (space.Pos().z - raySource.z) * invRay.z;
+		t2 = (space.OPos().z - raySource.z) * invRay.z;
+		tmin = std::max(tmin, std::min(t1, t2));
+		tmax = std::min(tmax, std::max(t1, t2));
+
+		if (tmin > tmax)
+			return;
+
+		// 1. find collisions with global octree
+		// 2.1. if empty -> next ray
+		// 2.2. put in stack (first node in path of ray on top of stack, last on bottom)
+		// 3. check top node
+		// 3.1. if empty -> next node
+		// 3.1.1. if stack is empty -> next ray
+		// 3.2. if collide -> go deeper or render (may depends on distance)
+		// ?. rays to light sources
+		// ?.?. reflections...
+		// 4. next ray
 	}
 
 
