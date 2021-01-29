@@ -191,15 +191,17 @@ public:
 		: pos(0.0, 0.0, 0.0), hAngle(0.0), vAngle(0.0) {}
 	Camera(double _x, double _y, double _z)
 		: pos(_x, _y, _z), hAngle(0.0), vAngle(0.0) {}
+	Camera(double _x, double _y, double _z, double _hAngle, double _vAngle)
+		: pos(_x, _y, _z), hAngle(_hAngle), vAngle(_vAngle) {}
 
 public:
 	void turnRight() {
-		hAngle += turn_speed;
-		if (hAngle > M_PI) hAngle -= 2.0 * M_PI;
+		hAngle -= turn_speed;
+		if (hAngle < -M_PI) hAngle += M_PI + M_PI;
 	}
 	void turnLeft() {
-		hAngle -= turn_speed;
-		if (hAngle < -M_PI) hAngle += 2.0 * M_PI;
+		hAngle += turn_speed;
+		if (hAngle > M_PI) hAngle -= M_PI + M_PI;
 	}
 	void turnUp() {
 		if (vAngle <= M_PI / 2.0)
@@ -213,31 +215,31 @@ public:
 	void moveW() {
 		pos.x += move_speed * std::cos(hAngle) * std::cos(vAngle);
 		pos.y += move_speed                    * std::sin(vAngle);
-		pos.z += move_speed * std::sin(hAngle) * std::cos(vAngle);
+		pos.z += move_speed * -std::sin(hAngle) * std::cos(vAngle);
 	}
 	void moveA() {
 		double _hAngle = hAngle + M_PI / 2.0;
 		pos.x += move_speed * std::cos(_hAngle) * std::cos(vAngle);
 		pos.y += move_speed * std::sin(vAngle);
-		pos.z += move_speed * std::sin(_hAngle) * std::cos(vAngle);
+		pos.z += move_speed * -std::sin(_hAngle) * std::cos(vAngle);
 	}
 	void moveS() {
 		pos.x -= move_speed * std::cos(hAngle) * std::cos(vAngle);
 		pos.y -= move_speed                    * std::sin(vAngle);
-		pos.z -= move_speed * std::sin(hAngle) * std::cos(vAngle);
+		pos.z -= move_speed * -std::sin(hAngle) * std::cos(vAngle);
 	}
 	void moveD() {
 		double _hAngle = hAngle - M_PI / 2.0;
 		pos.x += move_speed * std::cos(_hAngle) * std::cos(vAngle);
 		pos.y += move_speed * std::sin(vAngle);
-		pos.z += move_speed * std::sin(_hAngle) * std::cos(vAngle);
+		pos.z += move_speed * -std::sin(_hAngle) * std::cos(vAngle);
 	}
 
 	vd3d norm_direction() const {
 		return {
 			std::cos(hAngle) * std::cos(vAngle),
 			std::sin(vAngle),
-			std::sin(hAngle) * std::cos(vAngle),
+			-std::sin(hAngle) * std::cos(vAngle),
 		};
 	}
 };
@@ -315,10 +317,10 @@ protected:
 			double xzLength = cos(vAngle);
 			for (olc::vd2d& xzDir : xzComponents) {
 				vd3d rayDir = { xzDir.x * xzLength, rayY, xzDir.y * xzLength };
-				//                                     ^^^^^^^ <- zComponent
+				//                                        ^^^^^^^ <- zComponent
 				vd3d raySource = player_view.pos + rayDir;
 
-				calcRay(raySource, rayDir);
+				CalcRay(raySource, rayDir);
 			}
 		}
 
@@ -332,9 +334,16 @@ protected:
 	}
 
 
+	enum crd {
+		x, y, z
+	};
+
+
 protected:
-	inline void calcRay(vd3d& raySource, vd3d& rayDir) {
+	inline void CalcRay(vd3d& raySource, vd3d& rayDir) {
 		vd3d invRay = vd3d{ 1, 1, 1 } / rayDir;
+
+		crd crd_of_min = crd::x, crd_of_max = crd::x;
 
 		double t1 = (space.Pos().x - raySource.x) * invRay.x;
 		double t2 = (space.OPos().x - raySource.x) * invRay.x;
@@ -351,6 +360,8 @@ protected:
 		tmin = std::max(tmin, std::min(t1, t2));
 		tmax = std::min(tmax, std::max(t1, t2));
 
+		if (tmax < 0)
+			return;
 		if (tmin > tmax)
 			return;
 
@@ -367,7 +378,50 @@ protected:
 	}
 
 
-protected:
+	olc::Pixel& IterNode(octree_node<GameObject>* node, vd3d& nodePos, vd3d& nodeSize, vd3d& raySource, vd3d& rayDir) {
+		vd3d firstDot = {};
+		vd3d lastDot = {};
+		// find first and last points
+		return IterNode(node, nodePos, nodeSize, raySource, rayDir, firstDot, lastDot);
+	}
+
+
+	olc::Pixel& IterNode(octree_node<GameObject>* node, vd3d& nodePos, vd3d& nodeSize, vd3d& raySource, vd3d& rayDir, vd3d& firstDot, vd3d& lastDot) {
+		if (node->svo.depth == 1)
+			return node->svo.color;
+
+		// childrens
+		uint8_t childsOrder[4] = { 0 };
+		uint8_t crossMask = 0;
+		uint8_t childCount = 0;
+		uint8_t firstChild = 0, lastChild = 0;
+
+		firstChild |= firstDot.x < nodePos.x + nodeSize.x / 2.0;
+		firstChild |= (firstDot.y < nodePos.y + nodeSize.y / 2.0) << 1;
+		firstChild |= (firstDot.z < nodePos.z + nodeSize.z / 2.0) << 2;
+
+		lastChild |= lastDot.x < nodePos.x + nodeSize.x / 2.0;
+		lastChild |= (lastDot.y < nodePos.y + nodeSize.y / 2.0) << 1;
+		lastChild |= (lastDot.z < nodePos.z + nodeSize.z / 2.0) << 2;
+
+		crossMask = firstChild ^ lastChild;
+		childCount = (childCount & 1) + (childCount & 2) + (childCount & 4) + 1;
+
+		if (childCount == 1) {
+			if (node->svo.used_childs_mask && (1 << firstChild))
+				return IterNode(&node->svo.childs[firstChild], , , raySource, rayDir, firstDot, lastDot);
+			return node->svo.childs[firstChild].color;
+		}
+		if (childCount == 2) {
+
+		}
+		if (childCount == 3) {
+
+		}
+		if (childCount == 4) {
+
+		}
+	}
 };
 
 
