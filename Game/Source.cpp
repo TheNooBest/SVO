@@ -43,6 +43,16 @@ struct v3d_generic {
 	operator v3d_generic<int32_t>() const { return { static_cast<int32_t>(this->x), static_cast<int32_t>(this->y), static_cast<int32_t>(this->z) }; }
 	operator v3d_generic<float>() const { return { static_cast<float>(this->x), static_cast<float>(this->y), static_cast<float>(this->z) }; }
 	operator v3d_generic<double>() const { return { static_cast<double>(this->x), static_cast<double>(this->y), static_cast<double>(this->z) }; }
+
+	//custom
+	v3d_generic rotate(v3d_generic& a, T angle) {
+		double c = std::cos(angle), s = std::sin(angle), xy = a.x * a.y, xz = a.x * a.z, yz = a.y * a.z;
+		return {
+			(c + (1 - c) * a.x * a.x) * x + ((1 - c) * xy - s * a.z)  * y + ((1 - c) * xz + s * a.y)  * z,
+			((1 - c) * xy + s * a.z)  * x + (c + (1 - c) * a.y * a.y) * y + ((1 - c) * yz - s * a.x)  * z,
+			((1 - c) * xz - s * a.y)  * x + ((1 - c) * yz + s * a.x)  * y + (c + (1 - c) * a.z * a.z) * z
+		};
+	}
 };
 
 typedef v3d_generic<int32_t> vi3d;
@@ -54,14 +64,87 @@ typedef v3d_generic<double> vd3d;
 const uint32_t emptyVoxel = 0;
 
 
-struct svo_object {
-	olc::Pixel color = olc::Pixel(emptyVoxel);
-	std::vector<svo_object> childs;
-	svo_object* parent = nullptr;
+struct svo_space {
+	std::vector<GameObject> items;
+	std::vector<svo_space> childs;
+	svo_space* parent = nullptr;
 	uint32_t depth = 1;
 	uint8_t used_childs_mask = 0x00;
 
-	void set_used_child(svo_object* child) {
+	void set_used_child(svo_space* child) {
+		if (child == &childs[0]) {
+			used_childs_mask |= 0x01;
+			return;
+		}
+		if (child == &childs[1]) {
+			used_childs_mask |= 0x02;
+			return;
+		}
+		if (child == &childs[2]) {
+			used_childs_mask |= 0x04;
+			return;
+		}
+		if (child == &childs[3]) {
+			used_childs_mask |= 0x08;
+			return;
+		}
+		if (child == &childs[4]) {
+			used_childs_mask |= 0x10;
+			return;
+		}
+		if (child == &childs[5]) {
+			used_childs_mask |= 0x20;
+			return;
+		}
+		if (child == &childs[6]) {
+			used_childs_mask |= 0x40;
+			return;
+		}
+		if (child == &childs[7]) {
+			used_childs_mask |= 0x80;
+			return;
+		}
+	}
+	bool create_childs() {
+		if (depth == 1)
+			return false;
+
+		uint32_t child_depth = depth - 1;
+		childs.clear();
+		childs.resize(8);
+		childs[0].parent = this;
+		childs[0].depth = child_depth;
+		childs[1].parent = this;
+		childs[1].depth = child_depth;
+		childs[2].parent = this;
+		childs[2].depth = child_depth;
+		childs[3].parent = this;
+		childs[3].depth = child_depth;
+		childs[4].parent = this;
+		childs[4].depth = child_depth;
+		childs[5].parent = this;
+		childs[5].depth = child_depth;
+		childs[6].parent = this;
+		childs[6].depth = child_depth;
+		childs[7].parent = this;
+		childs[7].depth = child_depth;
+
+		if (parent != nullptr)
+			parent->set_used_child(this);
+
+		return true;
+	}
+};
+
+
+struct svo_model {
+	olc::Pixel color = olc::Pixel(emptyVoxel);
+	std::vector<svo_model> childs;
+	svo_model* parent = nullptr;
+	uint32_t depth = 1;
+	uint8_t used_childs_mask = 0x00;
+
+	void set_used_child(svo_model* child) {
 		if (child == &childs[0]) {
 			used_childs_mask |= 0x01;
 			return;
@@ -130,18 +213,13 @@ struct svo_object {
 class GameObject {
 	vu3d size;
 	vd3d pos;
-};
-
-
-template<typename T>
-struct octree_node {
-	std::vector<T> items;
-	svo_object svo;
+	svo_model model;
 };
 
 
 class Space3D {
-	octree_node<GameObject> space;
+public:
+	svo_space svo;
 	vu3d size;
 	vi3d pos;
 	vi3d oppositePos;
@@ -160,19 +238,15 @@ public:
 			depth += 1;
 			boxSide <<= 1;
 		}
-		space.svo.depth = depth;
+		svo.depth = depth;
 	}
 
-	void InitFrom(svo_object& svo) {
-		// todo: sizes
-		space.svo = svo;
-	}
 
 	vu3d Size() const { return size; }
 	vi3d Pos() const { return pos; }
 	vi3d OPos() const { return oppositePos; }
 
-	uint32_t Depth() const { return space.svo.depth; }
+	uint32_t Depth() const { return svo.depth; }
 };
 
 
@@ -242,6 +316,22 @@ public:
 			-std::sin(hAngle) * std::cos(vAngle),
 		};
 	}
+	vd3d perp_vert() const {
+		double _vAngle = vAngle + M_PI / 2.0;
+		return {
+			std::cos(hAngle) * std::cos(_vAngle),
+			std::sin(_vAngle),
+			-std::sin(hAngle) * std::cos(_vAngle),
+		};
+	}
+	vd3d perp_hor() const {
+		double _hAngle = hAngle + M_PI / 2.0;
+		return {
+			std::cos(_hAngle) * std::cos(vAngle),
+			std::sin(vAngle),
+			-std::sin(_hAngle) * std::cos(vAngle),
+		};
+	}
 };
 
 
@@ -255,25 +345,21 @@ public:
 protected:
 	Camera player_view = Camera(-10.0, 0.0, 0.0);
 	Space3D space;
-	std::vector<double> vAngles;
-	std::vector<olc::vd2d> xzComponents;
-	std::vector<octree_node<GameObject>*> octree_node_stack;
 	uint32_t st_index;
+	std::vector<double> vAngles;
+	std::vector<double> hAngles;
 
 
 protected:
 	bool OnUserCreate() override {
-		svo_object svo;
-		svo.depth = 2;
-		svo.create_childs();
-		svo.childs[0].color = olc::RED;
-		svo.childs[2].color = olc::RED;
-		space.InitFrom(svo);
+		svo_model model;
+		model.depth = 2;
+		model.create_childs();
+		model.childs[0].color = olc::RED;
+		model.childs[7].color = olc::RED;
 
 		vAngles.resize(ScreenHeight());
-		xzComponents.resize(ScreenWidth());
-
-		octree_node_stack.resize(space.Depth() * (size_t)4);
+		hAngles.resize(ScreenWidth());
 
 		return true;
 	}
@@ -304,23 +390,26 @@ protected:
 
 		double vDelta = (upperAngle - bottomAngle) / ScreenHeight();
 		double hDelta = (rightAngle - leftAngle) / ScreenWidth();
-		for (int i = 0; i < ScreenHeight(); i++) {
+		for (int i = 0; i < ScreenHeight(); i++)
 			vAngles[i] = bottomAngle + i * vDelta;
-		}
-		for (int i = 0; i < ScreenWidth(); i++) {
-			double hAngle = leftAngle + i * hDelta;
-			xzComponents[i] = { cos(hAngle), sin(hAngle) };
-		}
+		for (int i = 0; i < ScreenWidth(); i++)
+			hAngles[i] = leftAngle + i * hDelta;
 
-		for (double vAngle : vAngles) {
-			double rayY = sin(vAngle);
-			double xzLength = cos(vAngle);
-			for (olc::vd2d& xzDir : xzComponents) {
-				vd3d rayDir = { xzDir.x * xzLength, rayY, xzDir.y * xzLength };
-				//                                        ^^^^^^^ <- zComponent
+		vd3d vert = player_view.perp_vert();
+		vd3d hor = player_view.perp_hor();
+
+		for (int y = 0; y < ScreenHeight(); y++) {
+			double vAngle = vAngles[y];
+			for (int x = 0; x < ScreenWidth(); x++) {
+				double hAngle = hAngles[x];
+				vd3d rayDir = player_view.norm_direction().rotate(vert, hAngle).rotate(hor, vAngle);
 				vd3d raySource = player_view.pos + rayDir;
 
-				CalcRay(raySource, rayDir);
+				olc::Pixel pix = CalcRay(raySource, rayDir);
+				if (pix.n == emptyVoxel)
+					Draw(x, y, olc::BLACK);
+				else
+					Draw(x, y, pix);
 			}
 		}
 
@@ -340,7 +429,7 @@ protected:
 
 
 protected:
-	inline void CalcRay(vd3d& raySource, vd3d& rayDir) {
+	inline olc::Pixel& CalcRay(vd3d& raySource, vd3d& rayDir) {
 		vd3d invRay = vd3d{ 1, 1, 1 } / rayDir;
 
 		crd crd_of_min = crd::x, crd_of_max = crd::x;
@@ -386,7 +475,7 @@ protected:
 	}
 
 
-	olc::Pixel& IterNode(octree_node<GameObject>* node, vd3d& nodePos, vd3d& nodeSize, vd3d& raySource, vd3d& rayDir, vd3d& firstDot, vd3d& lastDot) {
+	olc::Pixel& IterNode(octree_node<GameObject>* node, vi3d nodePos, uint32_t nodeSize, vd3d& raySource, vd3d& rayDir, vd3d& firstDot, vd3d& lastDot) {
 		if (node->svo.depth == 1)
 			return node->svo.color;
 
@@ -396,20 +485,20 @@ protected:
 		uint8_t childCount = 0;
 		uint8_t firstChild = 0, lastChild = 0;
 
-		firstChild |= firstDot.x < nodePos.x + nodeSize.x / 2.0;
-		firstChild |= (firstDot.y < nodePos.y + nodeSize.y / 2.0) << 1;
-		firstChild |= (firstDot.z < nodePos.z + nodeSize.z / 2.0) << 2;
+		firstChild |= firstDot.x < nodePos.x + nodeSize / 2.0;
+		firstChild |= (firstDot.y < nodePos.y + nodeSize / 2.0) << 1;
+		firstChild |= (firstDot.z < nodePos.z + nodeSize / 2.0) << 2;
 
-		lastChild |= lastDot.x < nodePos.x + nodeSize.x / 2.0;
-		lastChild |= (lastDot.y < nodePos.y + nodeSize.y / 2.0) << 1;
-		lastChild |= (lastDot.z < nodePos.z + nodeSize.z / 2.0) << 2;
+		lastChild |= lastDot.x < nodePos.x + nodeSize / 2.0;
+		lastChild |= (lastDot.y < nodePos.y + nodeSize / 2.0) << 1;
+		lastChild |= (lastDot.z < nodePos.z + nodeSize / 2.0) << 2;
 
 		crossMask = firstChild ^ lastChild;
 		childCount = (childCount & 1) + (childCount & 2) + (childCount & 4) + 1;
 
 		if (childCount == 1) {
 			if (node->svo.used_childs_mask && (1 << firstChild))
-				return IterNode(&node->svo.childs[firstChild], , , raySource, rayDir, firstDot, lastDot);
+				return IterNode(&node->svo.childs[firstChild], vi3d{ 0, 0, 0 }, nodeSize, raySource, rayDir, firstDot, lastDot);
 			return node->svo.childs[firstChild].color;
 		}
 		if (childCount == 2) {
