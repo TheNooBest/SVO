@@ -49,11 +49,12 @@ struct v3d_generic {
 	//custom
 	v3d_generic sum() const { return this->x + this->y + this->z; }
 	v3d_generic rotate(v3d_generic& a, double angle) {
-		double c = std::cos(angle), s = std::sin(angle), xy = a.x * a.y, xz = a.x * a.z, yz = a.y * a.z;
+		double c = std::cos(angle), s = std::sin(angle), cc = 1 - c;
+		double xy = a.x * a.y, xz = a.x * a.z, yz = a.y * a.z;
 		return {
-			(c + (1 - c) * a.x * a.x) * x + ((1 - c) * xy - s * a.z)  * y + ((1 - c) * xz + s * a.y)  * z,
-			((1 - c) * xy + s * a.z)  * x + (c + (1 - c) * a.y * a.y) * y + ((1 - c) * yz - s * a.x)  * z,
-			((1 - c) * xz - s * a.y)  * x + ((1 - c) * yz + s * a.x)  * y + (c + (1 - c) * a.z * a.z) * z
+			(c + cc * a.x * a.x) * x + (cc * xy - s * a.z)  * y + (cc * xz + s * a.y)  * z,
+			(cc * xy + s * a.z)  * x + (c + cc * a.y * a.y) * y + (cc * yz - s * a.x)  * z,
+			(cc * xz - s * a.y)  * x + (cc * yz + s * a.x)  * y + (c + cc * a.z * a.z) * z
 		};
 		//v3d_generic<T> k = a.norm();
 		//double c = std::cos(angle), s = std::sin(angle);
@@ -354,7 +355,7 @@ public:
 
 
 protected:
-	Camera player_view = Camera(-10.0, 0.0, 0.0);
+	Camera player_view = Camera(0.01, 0.0, 0.5);
 	Space3D space;
 	GameObject testObject;
 	uint32_t st_index;
@@ -523,7 +524,7 @@ protected:
 			case 1:
 				pix = procSubtree(txm, ty0, tz0, tx1, tym, tzm, &node->childs[1 ^ a], a);
 				if (pix != olc::BLANK) return pix;
-				currNode = nextNode(txm, 8, tym, 3, tz1, 5);
+				currNode = nextNode(tx1, 8, tym, 3, tzm, 5);
 				break;
 			case 2:
 				pix = procSubtree(tx0, tym, tz0, txm, ty1, tzm, &node->childs[2 ^ a], a);
@@ -533,12 +534,12 @@ protected:
 			case 3:
 				pix = procSubtree(txm, tym, tz0, tx1, ty1, tzm, &node->childs[3 ^ a], a);
 				if (pix != olc::BLANK) return pix;
-				currNode = nextNode(txm, 8, ty1, 8, tz1, 7);
+				currNode = nextNode(tx1, 8, ty1, 8, tzm, 7);
 				break;
 			case 4:
 				pix = procSubtree(tx0, ty0, tzm, txm, tym, tz1, &node->childs[4 ^ a], a);
 				if (pix != olc::BLANK) return pix;
-				currNode = nextNode(tx1, 5, tym, 6, tzm, 8);
+				currNode = nextNode(txm, 5, tym, 6, tz1, 8);
 				break;
 			case 5:
 				pix = procSubtree(txm, ty0, tzm, tx1, tym, tz1, &node->childs[5 ^ a], a);
@@ -548,7 +549,7 @@ protected:
 			case 6:
 				pix = procSubtree(tx0, tym, tzm, txm, ty1, tz1, &node->childs[6 ^ a], a);
 				if (pix != olc::BLANK) return pix;
-				currNode = nextNode(tx1, 7, ty1, 8, tzm, 8);
+				currNode = nextNode(txm, 7, ty1, 8, tz1, 8);
 				break;
 			case 7:
 				pix = procSubtree(txm, tym, tzm, tx1, ty1, tz1, &node->childs[7 ^ a], a);
