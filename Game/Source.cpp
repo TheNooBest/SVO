@@ -368,10 +368,6 @@ protected:
 	Camera player_view = Camera(-1.0, 0.0, 0.0);
 	Space3D space;
 	GameObject testObject;
-	uint32_t st_index;
-	std::vector<double> vAngles;
-	std::vector<double> hAngles;
-	std::vector<vd3d>   horAxis;
 
 
 protected:
@@ -401,22 +397,6 @@ protected:
 		testObject.pos = { 0, 0, 0 };
 		uint32_t size = 1 << (model.depth - 1);
 		testObject.size = { size, size, size };
-
-		vAngles.resize(ScreenHeight());
-		hAngles.resize(ScreenWidth());
-		horAxis.resize(ScreenWidth());
-
-		double rightAngle = -player_view.fovH / 2.0;
-		double leftAngle = player_view.fovH / 2.0;
-		double bottomAngle = -player_view.fovV / 2.0;
-		double upperAngle = player_view.fovV / 2.0;
-
-		double vDelta = (upperAngle - bottomAngle) / ScreenHeight();
-		double hDelta = (leftAngle - rightAngle) / ScreenWidth();
-		for (int i = 0; i < vAngles.size(); i++)
-			vAngles[i] = upperAngle - i * vDelta;
-		for (int i = 0; i < hAngles.size(); i++)
-			hAngles[i] = leftAngle - i * hDelta;
 
 		return true;
 	}
