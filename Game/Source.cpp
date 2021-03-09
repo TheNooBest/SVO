@@ -365,7 +365,7 @@ public:
 
 
 protected:
-	Camera player_view = Camera(-1.0, 0.0, 0.0);
+	Camera player_view = Camera(-5.0, 0.0, 0.0);
 	Space3D space;
 	GameObject testObject;
 
@@ -394,7 +394,7 @@ protected:
 		model.childs[0].childs[7].color = olc::DARK_BLUE;
 
 		testObject.model = model;
-		testObject.pos = { 0, 0, 0 };
+		testObject.pos = { -2, -2, -2 };
 		uint32_t size = 1 << (model.depth - 1);
 		testObject.size = { size, size, size };
 
@@ -463,7 +463,7 @@ protected:
 	olc::Pixel rayParameter(svo_model* node, vd3d node_0, vd3d node_1, vd3d ray_source, vd3d ray_dir) {
 		unsigned char a = 0;
 
-		ray_dir += node_0;
+		ray_source -= node_0;
 		node_1 -= node_0;
 
 		uint32_t node_size = node_1.x;
