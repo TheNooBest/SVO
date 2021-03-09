@@ -28,7 +28,7 @@ struct v3d_generic {
 	v3d_generic  operator -  (const v3d_generic& rhs) const { return v3d_generic(this->x - rhs.x, this->y - rhs.y, this->z - rhs.z); }
 	v3d_generic  operator *  (const T& rhs)           const { return v3d_generic(this->x * rhs, this->y * rhs, this->z * rhs); }
 	v3d_generic  operator *  (const v3d_generic& rhs) const { return v3d_generic(this->x * rhs.x, this->y * rhs.y, this->z * rhs.z); }
-	v3d_generic  operator /  (const T& rhs)           const { return v3d_generic(this->x / rhs, this->y / rhs, this->z / z); }
+	v3d_generic  operator /  (const T& rhs)           const { return v3d_generic(this->x / rhs, this->y / rhs, this->z / rhs); }
 	v3d_generic  operator /  (const v3d_generic& rhs) const { return v3d_generic(this->x / rhs.x, this->y / rhs.y, this->z / rhs.z); }
 	v3d_generic& operator += (const v3d_generic& rhs) { this->x += rhs.x; this->y += rhs.y; this->z += rhs.z; return *this; }
 	v3d_generic& operator -= (const v3d_generic& rhs) { this->x -= rhs.x; this->y -= rhs.y; this->z -= rhs.z; return *this; }
@@ -320,6 +320,16 @@ public:
 		pos.y += move_speed * std::sin(vAngle);
 		pos.z += move_speed * -std::sin(_hAngle) * std::cos(vAngle);
 	}
+	void moveUp() {
+		pos.x += move_speed * -std::sin(vAngle) * -std::cos(hAngle);
+		pos.y += move_speed * std::cos(vAngle);
+		pos.z += move_speed * -std::sin(vAngle) * -std::sin(hAngle);
+	}
+	void moveDown() {
+		pos.x -= move_speed * -std::sin(vAngle) * -std::cos(hAngle);
+		pos.y -= move_speed * std::cos(vAngle);
+		pos.z -= move_speed * -std::sin(vAngle) * -std::sin(hAngle);
+	}
 
 	vd3d norm_direction() const {
 		return {
@@ -355,7 +365,7 @@ public:
 
 
 protected:
-	Camera player_view = Camera(0.01, 0.0, 0.5);
+	Camera player_view = Camera(-1.0, 0.0, 0.0);
 	Space3D space;
 	GameObject testObject;
 	uint32_t st_index;
@@ -421,6 +431,10 @@ protected:
 			player_view.moveS();
 		if (GetKey(olc::D).bHeld)
 			player_view.moveD();
+		if (GetKey(olc::SPACE).bHeld)
+			player_view.moveUp();
+		if (GetKey(olc::SHIFT).bHeld)
+			player_view.moveDown();
 		if (GetKey(olc::Q).bHeld)
 			player_view.turnLeft();
 		if (GetKey(olc::E).bHeld)
@@ -430,28 +444,34 @@ protected:
 		// Render
 		Clear(olc::BLACK);
 
-		vd3d vert = player_view.perp_vert();
-		//vd3d hor = player_view.perp_hor();
+		vd3d vert = player_view.perp_vert() * std::tan(player_view.fovV / 2.0);
+		vd3d hor  = player_view.perp_hor()  * std::tan(player_view.fovH / 2.0);
 
-		for (int i = 0; i < horAxis.size(); i++)
-			horAxis[i] = player_view.perp_hor().rotate(vert, hAngles[i]);
+		vd3d luCorner = player_view.pos + player_view.norm_direction() + vert - hor;
+		vd3d ruCorner = player_view.pos + player_view.norm_direction() + vert + hor;
+		vd3d lbCorner = player_view.pos + player_view.norm_direction() - vert - hor;
+		vd3d rbCorner = player_view.pos + player_view.norm_direction() - vert + hor;
+
+		vd3d deltaY = (lbCorner - luCorner) / ScreenHeight();
+		vd3d deltaX = (ruCorner - luCorner) / ScreenWidth();
 
 		for (int y = 0; y < ScreenHeight(); y++) {
-			double vAngle = vAngles[y];
+			vd3d left = luCorner + deltaY * y;
 			for (int x = 0; x < ScreenWidth(); x++) {
-				double hAngle = hAngles[x];
-				vd3d hor = horAxis[x];
-				vd3d rayDir = player_view.norm_direction().rotate(vert, hAngle).rotate(hor, vAngle);
-				vd3d raySource = player_view.pos + rayDir;
+				vd3d raySource = left + deltaX * x;
+				vd3d rayDir = raySource - player_view.pos;
 
 				olc::Pixel pix = rayParameter(&testObject.model, testObject.pos, testObject.pos + testObject.size, raySource, rayDir);
 				Draw(x, y, pix);
 			}
 		}
 
+		olc::vi2d mousePos = GetMousePos();
+
 		std::stringstream coords;
 		coords << "pos: " << player_view.pos.str() << '\n';
 		coords << "dir: " << player_view.norm_direction().str() << '\n';
+		coords << "mouse dir: " << (luCorner + deltaY * mousePos.y + deltaX * mousePos.x - player_view.pos).str() << '\n';
 		DrawString(0, 0, coords.str());
 
 
@@ -460,45 +480,62 @@ protected:
 
 
 protected:
-	olc::Pixel rayParameter(svo_model* node, vi3d node_0, vi3d node_1, vd3d raySource, vd3d rayDir) {
+	olc::Pixel rayParameter(svo_model* node, vd3d node_0, vd3d node_1, vd3d ray_source, vd3d ray_dir) {
 		unsigned char a = 0;
-		uint32_t node_size = node_1.x - node_0.x;
 
-		if (rayDir.x < 0.0) {
-			raySource.x = node_size - raySource.x;
-			rayDir.x = -rayDir.x;
+		ray_dir += node_0;
+		node_1 -= node_0;
+
+		uint32_t node_size = node_1.x;
+
+		if (ray_dir.x < 0.0) {
+			ray_source.x = node_size - ray_source.x;
+			ray_dir.x = -ray_dir.x;
 			a |= 1;
 		}
-		if (rayDir.y < 0.0) {
-			raySource.y = node_size - raySource.y;
-			rayDir.y = -rayDir.y;
+		if (ray_dir.y < 0.0) {
+			ray_source.y = node_size - ray_source.y;
+			ray_dir.y = -ray_dir.y;
 			a |= 2;
 		}
-		if (rayDir.z < 0.0) {
-			raySource.z = node_size - raySource.z;
-			rayDir.z = -rayDir.z;
+		if (ray_dir.z < 0.0) {
+			ray_source.z = node_size - ray_source.z;
+			ray_dir.z = -ray_dir.z;
 			a |= 4;
 		}
 
-		double divX = 1.0 / rayDir.x;
-		double divY = 1.0 / rayDir.y;
-		double divZ = 1.0 / rayDir.z;
+		double divX = 1.0 / ray_dir.x;
+		double divY = 1.0 / ray_dir.y;
+		double divZ = 1.0 / ray_dir.z;
 
-		double tx0 = (node_0.x - raySource.x) * divX;
-		double tx1 = (node_1.x - raySource.x) * divX;
-		double ty0 = (node_0.y - raySource.y) * divY;
-		double ty1 = (node_1.y - raySource.y) * divY;
-		double tz0 = (node_0.z - raySource.z) * divZ;
-		double tz1 = (node_1.z - raySource.z) * divZ;
+		double tx0 = -ray_source.x * divX;
+		double tx1 = (node_1.x - ray_source.x) * divX;
+		double ty0 = -ray_source.y * divY;
+		double ty1 = (node_1.y - ray_source.y) * divY;
+		double tz0 = -ray_source.z * divZ;
+		double tz1 = (node_1.z - ray_source.z) * divZ;
 
-		if (std::max(tx0, std::max(ty0, tz0)) < std::min(tx1, std::min(ty1, tz1))) {
-			return procSubtree(tx0, ty0, tz0, tx1, ty1, tz1, node, a);
-		}
+		if (std::isnan(tx0))
+			tx0 = -INFINITY;
+		if (std::isnan(tx1))
+			return olc::BLANK;
+		if (std::isnan(ty0))
+			ty0 = -INFINITY;
+		if (std::isnan(ty1))
+			return olc::BLANK;
+		if (std::isnan(tz0))
+			tz0 = -INFINITY;
+		if (std::isnan(tz1))
+			return olc::BLANK;
+
+		if (std::max(tx0, std::max(ty0, tz0)) < std::min(tx1, std::min(ty1, tz1)))
+			return procSubtree(tx0, ty0, tz0, tx1, ty1, tz1, node, a, node_1, ray_source);
+
 		return olc::BLANK;
 	}
 
 
-	olc::Pixel procSubtree(double tx0, double ty0, double tz0, double tx1, double ty1, double tz1, svo_model* node, unsigned char a) {
+	olc::Pixel procSubtree(double tx0, double ty0, double tz0, double tx1, double ty1, double tz1, svo_model* node, uint8_t a, vd3d node_1, vd3d ray_source) {
 		double txm, tym, tzm;
 
 		if (tx1 < 0.0 || ty1 < 0.0 || tz1 < 0.0)
@@ -506,53 +543,64 @@ protected:
 		if (node->is_terminal())
 			return node->color;
 
-		txm = 0.5 * (tx0 + tx1);
-		tym = 0.5 * (ty0 + ty1);
-		tzm = 0.5 * (tz0 + tz1);
+		if (std::isinf(tx0))
+			txm = ray_source.x < node_1.x * 0.5 ? INFINITY : -INFINITY;
+		else
+			txm = 0.5 * (tx0 + tx1);
+		if (std::isinf(ty0))
+			tym = ray_source.y < node_1.y * 0.5 ? INFINITY : -INFINITY;
+		else
+			tym = 0.5 * (ty0 + ty1);
+		if (std::isinf(tz0))
+			tzm = ray_source.z < node_1.z * 0.5 ? INFINITY : -INFINITY;
+		else
+			tzm = 0.5 * (tz0 + tz1);
 
 		uint8_t currNode = firstNode(tx0, ty0, tz0, txm, tym, tzm);
+
+		vd3d half_node = node_1 * 0.5;
 
 		do {
 			olc::Pixel pix;
 			switch (currNode)
 			{
 			case 0:
-				pix = procSubtree(tx0, ty0, tz0, txm, tym, tzm, &node->childs[a], a);
+				pix = procSubtree(tx0, ty0, tz0, txm, tym, tzm, &node->childs[a], a, half_node, ray_source);
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 1, tym, 2, tzm, 4);
 				break;
 			case 1:
-				pix = procSubtree(txm, ty0, tz0, tx1, tym, tzm, &node->childs[1 ^ a], a);
+				pix = procSubtree(txm, ty0, tz0, tx1, tym, tzm, &node->childs[1 ^ a], a, half_node, ray_source + vd3d{ half_node.x, 0.0, 0.0 });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(tx1, 8, tym, 3, tzm, 5);
 				break;
 			case 2:
-				pix = procSubtree(tx0, tym, tz0, txm, ty1, tzm, &node->childs[2 ^ a], a);
+				pix = procSubtree(tx0, tym, tz0, txm, ty1, tzm, &node->childs[2 ^ a], a, half_node, ray_source + vd3d{ 0.0, half_node.y, 0.0 });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 3, ty1, 8, tzm, 6);
 				break;
 			case 3:
-				pix = procSubtree(txm, tym, tz0, tx1, ty1, tzm, &node->childs[3 ^ a], a);
+				pix = procSubtree(txm, tym, tz0, tx1, ty1, tzm, &node->childs[3 ^ a], a, half_node, ray_source + vd3d{ half_node.x, half_node.y, 0.0 });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(tx1, 8, ty1, 8, tzm, 7);
 				break;
 			case 4:
-				pix = procSubtree(tx0, ty0, tzm, txm, tym, tz1, &node->childs[4 ^ a], a);
+				pix = procSubtree(tx0, ty0, tzm, txm, tym, tz1, &node->childs[4 ^ a], a, half_node, ray_source + vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 5, tym, 6, tz1, 8);
 				break;
 			case 5:
-				pix = procSubtree(txm, ty0, tzm, tx1, tym, tz1, &node->childs[5 ^ a], a);
+				pix = procSubtree(txm, ty0, tzm, tx1, tym, tz1, &node->childs[5 ^ a], a, half_node, ray_source + vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(tx1, 8, tym, 7, tz1, 8);
 				break;
 			case 6:
-				pix = procSubtree(tx0, tym, tzm, txm, ty1, tz1, &node->childs[6 ^ a], a);
+				pix = procSubtree(tx0, tym, tzm, txm, ty1, tz1, &node->childs[6 ^ a], a, half_node, ray_source + vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 7, ty1, 8, tz1, 8);
 				break;
 			case 7:
-				pix = procSubtree(txm, tym, tzm, tx1, ty1, tz1, &node->childs[7 ^ a], a);
+				pix = procSubtree(txm, tym, tzm, tx1, ty1, tz1, &node->childs[7 ^ a], a, half_node, ray_source + vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = 8;
 				break;
@@ -599,7 +647,7 @@ protected:
 
 int main(int argc, char* argv[]) {
 	SVOGame game;
-	if (game.Construct(480, 360, 2, 2))
+	if (game.Construct(600, 400, 2, 2))
 		game.Start();
 	return 0;
 }
