@@ -550,37 +550,37 @@ protected:
 				currNode = nextNode(txm, 1, tym, 2, tzm, 4);
 				break;
 			case 1:
-				pix = procSubtree(txm, ty0, tz0, tx1, tym, tzm, &node->childs[1 ^ a], a, half_node, ray_source + vd3d{ half_node.x, 0.0, 0.0 });
+				pix = procSubtree(txm, ty0, tz0, tx1, tym, tzm, &node->childs[1 ^ a], a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(tx1, 8, tym, 3, tzm, 5);
 				break;
 			case 2:
-				pix = procSubtree(tx0, tym, tz0, txm, ty1, tzm, &node->childs[2 ^ a], a, half_node, ray_source + vd3d{ 0.0, half_node.y, 0.0 });
+				pix = procSubtree(tx0, tym, tz0, txm, ty1, tzm, &node->childs[2 ^ a], a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 3, ty1, 8, tzm, 6);
 				break;
 			case 3:
-				pix = procSubtree(txm, tym, tz0, tx1, ty1, tzm, &node->childs[3 ^ a], a, half_node, ray_source + vd3d{ half_node.x, half_node.y, 0.0 });
+				pix = procSubtree(txm, tym, tz0, tx1, ty1, tzm, &node->childs[3 ^ a], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(tx1, 8, ty1, 8, tzm, 7);
 				break;
 			case 4:
-				pix = procSubtree(tx0, ty0, tzm, txm, tym, tz1, &node->childs[4 ^ a], a, half_node, ray_source + vd3d{ half_node.x, 0.0, half_node.z });
+				pix = procSubtree(tx0, ty0, tzm, txm, tym, tz1, &node->childs[4 ^ a], a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 5, tym, 6, tz1, 8);
 				break;
 			case 5:
-				pix = procSubtree(txm, ty0, tzm, tx1, tym, tz1, &node->childs[5 ^ a], a, half_node, ray_source + vd3d{ half_node.x, 0.0, half_node.z });
+				pix = procSubtree(txm, ty0, tzm, tx1, tym, tz1, &node->childs[5 ^ a], a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(tx1, 8, tym, 7, tz1, 8);
 				break;
 			case 6:
-				pix = procSubtree(tx0, tym, tzm, txm, ty1, tz1, &node->childs[6 ^ a], a, half_node, ray_source + vd3d{ half_node.x, half_node.y, half_node.z });
+				pix = procSubtree(tx0, tym, tzm, txm, ty1, tz1, &node->childs[6 ^ a], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = nextNode(txm, 7, ty1, 8, tz1, 8);
 				break;
 			case 7:
-				pix = procSubtree(txm, tym, tzm, tx1, ty1, tz1, &node->childs[7 ^ a], a, half_node, ray_source + vd3d{ half_node.x, half_node.y, half_node.z });
+				pix = procSubtree(txm, tym, tzm, tx1, ty1, tz1, &node->childs[7 ^ a], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK) return pix;
 				currNode = 8;
 				break;
