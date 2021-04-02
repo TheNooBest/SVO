@@ -540,6 +540,9 @@ protected:
 	{
 		std::unique_lock<std::mutex> ul(mut);
 
+		if (GetKey(olc::ESCAPE).bPressed)
+			return false;
+
 		if (GetKey(olc::CTRL).bHeld) {
 			if (GetKey(olc::K1).bPressed)
 				setWorkerThreads(1);
@@ -549,6 +552,14 @@ protected:
 				setWorkerThreads(3);
 			if (GetKey(olc::K4).bPressed)
 				setWorkerThreads(4);
+			if (GetKey(olc::K5).bPressed)
+				setWorkerThreads(5);
+			if (GetKey(olc::K6).bPressed)
+				setWorkerThreads(6);
+			if (GetKey(olc::K7).bPressed)
+				setWorkerThreads(7);
+			if (GetKey(olc::K8).bPressed)
+				setWorkerThreads(8);
 		}
 
 		// Movement
@@ -951,19 +962,19 @@ protected:
 				pix = procSubtreeXY(txm, ty0, tx1, tym, &node->childs[a ^ 1], a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXY(txm, 8, tym, 3);
+				curr_node = nextNodeXY(tx1, 8, tym, 3);
 				break;
 			case 2:
 				pix = procSubtreeXY(tx0, tym, txm, ty1, &node->childs[a ^ 2], a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXY(txm, 3, tym, 8);
+				curr_node = nextNodeXY(txm, 3, ty1, 8);
 				break;
 			case 3:
 				pix = procSubtreeXY(txm, tym, tx1, ty1, &node->childs[a ^ 3], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXY(txm, 8, tym, 8);
+				curr_node = nextNodeXY(tx1, 8, ty1, 8);
 				break;
 			case 4:
 				pix = procSubtreeXY(tx0, ty0, txm, tym, &node->childs[a ^ 4], a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z });
@@ -975,19 +986,19 @@ protected:
 				pix = procSubtreeXY(txm, ty0, tx1, tym, &node->childs[a ^ 5], a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXY(txm, 8, tym, 7);
+				curr_node = nextNodeXY(tx1, 8, tym, 7);
 				break;
 			case 6:
 				pix = procSubtreeXY(tx0, tym, txm, ty1, &node->childs[a ^ 6], a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXY(txm, 7, tym, 8);
+				curr_node = nextNodeXY(txm, 7, ty1, 8);
 				break;
 			case 7:
 				pix = procSubtreeXY(txm, tym, tx1, ty1, &node->childs[a ^ 7], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXY(txm, 8, tym, 8);
+				curr_node = nextNodeXY(tx1, 8, ty1, 8);
 				break;
 			}
 		} while (curr_node < 8);
@@ -1021,7 +1032,7 @@ protected:
 				pix = procSubtreeXZ(txm, tz0, tx1, tzm, &node->childs[a ^ 1], a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXZ(txm, 8, tzm, 5);
+				curr_node = nextNodeXZ(tx1, 8, tzm, 5);
 				break;
 			case 2:
 				pix = procSubtreeXZ(tx0, tz0, txm, tzm, &node->childs[a ^ 2], a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 });
@@ -1033,31 +1044,31 @@ protected:
 				pix = procSubtreeXZ(txm, tz0, tx1, tzm, &node->childs[a ^ 3], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXZ(txm, 8, tzm, 7);
+				curr_node = nextNodeXZ(tx1, 8, tzm, 7);
 				break;
 			case 4:
 				pix = procSubtreeXZ(tx0, tzm, txm, tz1, &node->childs[a ^ 4], a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXZ(txm, 5, tzm, 8);
+				curr_node = nextNodeXZ(txm, 5, tz1, 8);
 				break;
 			case 5:
 				pix = procSubtreeXZ(txm, tzm, tx1, tz1, &node->childs[a ^ 5], a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXZ(txm, 8, tzm, 8);
+				curr_node = nextNodeXZ(tx1, 8, tz1, 8);
 				break;
 			case 6:
 				pix = procSubtreeXZ(tx0, tzm, txm, tz1, &node->childs[a ^ 6], a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXZ(txm, 7, tzm, 8);
+				curr_node = nextNodeXZ(txm, 7, tz1, 8);
 				break;
 			case 7:
 				pix = procSubtreeXZ(txm, tzm, tx1, tz1, &node->childs[a ^ 7], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeXZ(txm, 8, tzm, 8);
+				curr_node = nextNodeXZ(tx1, 8, tz1, 8);
 				break;
 			}
 		} while (curr_node < 8);
@@ -1097,37 +1108,37 @@ protected:
 				pix = procSubtreeYZ(tym, ty1, tz0, tzm, &node->childs[a ^ 2], a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeYZ(tym, 8, tzm, 6);
+				curr_node = nextNodeYZ(ty1, 8, tzm, 6);
 				break;
 			case 3:
 				pix = procSubtreeYZ(tym, ty1, tz0, tzm, &node->childs[a ^ 3], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeYZ(tym, 8, tzm, 7);
+				curr_node = nextNodeYZ(ty1, 8, tzm, 7);
 				break;
 			case 4:
 				pix = procSubtreeYZ(ty0, tym, tzm, tz1, &node->childs[a ^ 4], a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeYZ(tym, 6, tzm, 8);
+				curr_node = nextNodeYZ(tym, 6, tz1, 8);
 				break;
 			case 5:
 				pix = procSubtreeYZ(ty0, tym, tzm, tz1, &node->childs[a ^ 5], a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeYZ(tym, 7, tzm, 8);
+				curr_node = nextNodeYZ(tym, 7, tz1, 8);
 				break;
 			case 6:
 				pix = procSubtreeYZ(tym, ty1, tzm, tz1, &node->childs[a ^ 6], a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeYZ(tym, 8, tzm, 8);
+				curr_node = nextNodeYZ(ty1, 8, tz1, 8);
 				break;
 			case 7:
 				pix = procSubtreeYZ(tym, ty1, tzm, tz1, &node->childs[a ^ 7], a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z });
 				if (pix != olc::BLANK)
 					return pix;
-				curr_node = nextNodeYZ(tym, 8, tzm, 8);
+				curr_node = nextNodeYZ(ty1, 8, tz1, 8);
 				break;
 			}
 		} while (curr_node < 8);
@@ -1299,16 +1310,16 @@ protected:
 		return z;
 	}
 
-	uint8_t nextNodeXY(double txm, uint8_t x, double tym, uint8_t y) {
-		return txm < tym ? x : y;
+	uint8_t nextNodeXY(double tx, uint8_t x, double ty, uint8_t y) {
+		return tx < ty ? x : y;
 	}
 
-	uint8_t nextNodeXZ(double txm, uint8_t x, double tzm, uint8_t z) {
-		return txm < tzm ? x : z;
+	uint8_t nextNodeXZ(double tx, uint8_t x, double tz, uint8_t z) {
+		return tx < tz ? x : z;
 	}
 
-	uint8_t nextNodeYZ(double tym, uint8_t y, double tzm, uint8_t z) {
-		return tym < tzm ? y : z;
+	uint8_t nextNodeYZ(double ty, uint8_t y, double tz, uint8_t z) {
+		return ty < tz ? y : z;
 	}
 
 	uint8_t nextNodeXYZ(double txm, uint8_t x, double tym, uint8_t y, double tzm, uint8_t z)
@@ -1366,6 +1377,7 @@ protected:
 
 		for (auto& w : workers) {
 			while (!w.started) { std::this_thread::yield(); }
+			{ std::unique_lock<std::mutex> ul(w.mut); }
 		}
 	}
 };
