@@ -1,7 +1,12 @@
 #define OLC_PGE_APPLICATION
 #define _USE_MATH_DEFINES
 #include "olcPixelGameEngine.h"
-#include <stack>
+#include <thread>
+#include <condition_variable>
+
+
+using namespace std::chrono_literals;
+
 
 template <typename T>
 struct v3d_generic
@@ -436,11 +441,43 @@ public:
 	}
 };
 
-struct render_worker
-{
 
+struct worker {
+	bool alive = true;
+	bool started = false;
+	std::mutex mut;
 	std::thread thread;
+
+	vd3d corner;
+	vd3d deltaX, deltaY;
+	std::function<void(vd3d, vd3d, vd3d)> _job;
+
+
+	worker() {}
+	worker(const worker& w) = delete;
+	worker(worker&& w) noexcept : thread(std::move(w.thread)) {}
+
+
+	void job(std::condition_variable& work_cv, std::condition_variable& complete_cv) {
+		std::unique_lock<std::mutex> ul(mut);
+		started = true;
+		std::cout << "Worker thread: " << std::this_thread::get_id() << std::endl;
+
+		work_cv.wait(ul);
+		while (alive) {
+			_job(corner, deltaX, deltaY);
+			complete_cv.notify_one();
+			work_cv.wait(ul);
+		}
+	}
+
+	void set_params(vd3d _luCorner, vd3d _deltaX, vd3d _deltaY) {
+		corner = _luCorner;
+		deltaX = _deltaX;
+		deltaY = _deltaY;
+	}
 };
+
 
 class SVOGame : public olc::PixelGameEngine
 {
@@ -450,10 +487,18 @@ public:
 		sAppName = "SVO";
 	}
 
+
 protected:
 	Camera player_view = Camera(-5.0, 0.0, 0.0);
 	Space3D space;
 	GameObject testObject;
+
+	std::mutex mut;
+	std::condition_variable work_cv;
+	std::condition_variable complete_cv;
+	std::vector<worker> workers;
+	std::atomic_uint8_t work_in_progress;
+
 
 protected:
 	bool OnUserCreate() override
@@ -484,11 +529,28 @@ protected:
 		uint32_t size = 1 << (model.depth - 1);
 		testObject.size = {size, size, size};
 
+		setWorkerThreads(1);
+
+		std::cout << "Main thread: " << std::this_thread::get_id() << std::endl;
+
 		return true;
 	}
 
 	bool OnUserUpdate(float fElapsedTime) override
 	{
+		std::unique_lock<std::mutex> ul(mut);
+
+		if (GetKey(olc::CTRL).bHeld) {
+			if (GetKey(olc::K1).bPressed)
+				setWorkerThreads(1);
+			if (GetKey(olc::K2).bPressed)
+				setWorkerThreads(2);
+			if (GetKey(olc::K3).bPressed)
+				setWorkerThreads(3);
+			if (GetKey(olc::K4).bPressed)
+				setWorkerThreads(4);
+		}
+
 		// Movement
 		if (GetKey(olc::W).bHeld)
 			player_view.moveW();
@@ -521,18 +583,15 @@ protected:
 		vd3d deltaY = (lbCorner - luCorner) / ScreenHeight();
 		vd3d deltaX = (ruCorner - luCorner) / ScreenWidth();
 
-		for (int y = 0; y < ScreenHeight(); y++)
-		{
-			vd3d left = luCorner + deltaY * y;
-			for (int x = 0; x < ScreenWidth(); x++)
-			{
-				vd3d raySource = left + deltaX * x;
-				vd3d rayDir = raySource - player_view.pos;
-
-				olc::Pixel pix = rayParameter(&testObject.model, testObject.pos, testObject.pos + testObject.size, raySource, rayDir);
-				Draw(x, y, pix);
-			}
+		for (int i = 0; i < workers.size(); i++) {
+			workers[i].set_params(luCorner, deltaX, deltaY);
 		}
+
+		work_in_progress = workers.size();
+		work_cv.notify_all();
+		while (work_in_progress > 0) { std::this_thread::yield(); }
+		//complete_cv.wait(ul, [&] { return work_in_progress == 0; });
+		//complete_cv.wait_for(ul, 3ms, [&] { return work_in_progress == 0; });
 
 		olc::vi2d mousePos = GetMousePos();
 
@@ -545,6 +604,12 @@ protected:
 		return true;
 	}
 
+	bool OnUserDestroy() override {
+		setWorkerThreads(0);
+		return true;
+	}
+
+	
 protected:
 	olc::Pixel rayParameter(svo_model *node, vd3d node_0, vd3d node_1, vd3d ray_source, vd3d ray_dir)
 	{
@@ -553,23 +618,21 @@ protected:
 		ray_source -= node_0;
 		node_1 -= node_0;
 
-		uint32_t node_size = node_1.x;
-
 		if (ray_dir.x < 0.0)
 		{
-			ray_source.x = node_size - ray_source.x;
+			ray_source.x = node_1.x - ray_source.x;
 			ray_dir.x = -ray_dir.x;
 			a |= 1;
 		}
 		if (ray_dir.y < 0.0)
 		{
-			ray_source.y = node_size - ray_source.y;
+			ray_source.y = node_1.y - ray_source.y;
 			ray_dir.y = -ray_dir.y;
 			a |= 2;
 		}
 		if (ray_dir.z < 0.0)
 		{
-			ray_source.z = node_size - ray_source.z;
+			ray_source.z = node_1.z - ray_source.z;
 			ray_dir.z = -ray_dir.z;
 			a |= 4;
 		}
@@ -1261,6 +1324,49 @@ protected:
 				return y;
 		}
 		return z;
+	}
+	
+
+protected:
+	void setWorkerThreads(uint8_t count) {
+		for (auto& w : workers) {
+			w.alive = false;
+		}
+		work_cv.notify_all();
+		for (auto& w : workers) {
+			w.thread.join();
+		}
+
+		workers.clear();
+		workers.resize(count);
+
+		for (int i = 0; i < workers.size(); i++) {
+			workers[i].thread = std::thread(&worker::job, &workers[i], std::ref(work_cv), std::ref(complete_cv));
+
+			uint32_t left_x = ScreenWidth() * i / workers.size();
+			uint32_t right_x = ScreenWidth() * (i + 1) / workers.size();
+
+			workers[i]._job = [&, left_x, right_x, height = ScreenHeight()](vd3d luCorner, vd3d deltaX, vd3d deltaY) {
+				for (uint32_t y = 0; y < height; y++)
+				{
+					vd3d left = luCorner + deltaY * y;
+					for (uint32_t x = left_x; x < right_x; x++)
+					{
+						vd3d raySource = left + deltaX * x;
+						vd3d rayDir = raySource - player_view.pos;
+
+						olc::Pixel pix = rayParameter(&testObject.model, testObject.pos, testObject.pos + testObject.size, raySource, rayDir);
+						Draw(x, y, pix);
+					}
+				}
+
+				work_in_progress--;
+			};
+		}
+
+		for (auto& w : workers) {
+			while (!w.started) { std::this_thread::yield(); }
+		}
 	}
 };
 
