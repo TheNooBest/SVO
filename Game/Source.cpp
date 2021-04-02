@@ -201,7 +201,7 @@ struct svo_model
 	olc::Pixel color = olc::BLANK;
 	std::vector<svo_model> childs;
 	svo_model *parent = nullptr;
-	uint32_t depth = 1;
+	uint32_t max_depth = 256;
 	uint8_t used_childs_mask = 0x00;
 
 	void set_used_child(svo_model *child)
@@ -249,28 +249,28 @@ struct svo_model
 	}
 	bool create_childs()
 	{
-		if (depth == 1)
+		if (max_depth == 1)
 			return false;
 
-		uint32_t child_depth = depth - 1;
+		uint32_t child_depth = max_depth - 1;
 		childs.clear();
 		childs.resize(8);
 		childs[0].parent = this;
-		childs[0].depth = child_depth;
+		childs[0].max_depth = child_depth;
 		childs[1].parent = this;
-		childs[1].depth = child_depth;
+		childs[1].max_depth = child_depth;
 		childs[2].parent = this;
-		childs[2].depth = child_depth;
+		childs[2].max_depth = child_depth;
 		childs[3].parent = this;
-		childs[3].depth = child_depth;
+		childs[3].max_depth = child_depth;
 		childs[4].parent = this;
-		childs[4].depth = child_depth;
+		childs[4].max_depth = child_depth;
 		childs[5].parent = this;
-		childs[5].depth = child_depth;
+		childs[5].max_depth = child_depth;
 		childs[6].parent = this;
-		childs[6].depth = child_depth;
+		childs[6].max_depth = child_depth;
 		childs[7].parent = this;
-		childs[7].depth = child_depth;
+		childs[7].max_depth = child_depth;
 
 		if (parent != nullptr)
 			parent->set_used_child(this);
@@ -287,7 +287,7 @@ struct svo_model
 class GameObject
 {
 public:
-	vu3d size;
+	vd3d size;
 	vd3d pos;
 	svo_model model;
 };
@@ -459,7 +459,6 @@ protected:
 	bool OnUserCreate() override
 	{
 		svo_model model;
-		model.depth = 3;
 		model.create_childs();
 		model.childs[0].create_childs();
 		model.childs[1].color = olc::GREEN;
@@ -479,10 +478,10 @@ protected:
 		model.childs[0].childs[6].color = olc::DARK_YELLOW;
 		model.childs[0].childs[7].color = olc::DARK_BLUE;
 
+		double size = 1.0;
 		testObject.model = model;
-		testObject.pos = {-2, -2, -2};
-		uint32_t size = 1 << (model.depth - 1);
-		testObject.size = {size, size, size};
+		testObject.pos = { -size / 2.0, -size / 2.0, -size / 2.0 };
+		testObject.size = { size, size, size };
 
 		return true;
 	}
