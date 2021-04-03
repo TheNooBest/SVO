@@ -204,95 +204,149 @@ struct svo_space
 struct svo_model
 {
 	olc::Pixel color = olc::BLANK;
-	std::vector<svo_model> childs;
+	svo_model *childs = nullptr;
 	svo_model *parent = nullptr;
-	uint32_t depth = 1;
-	uint8_t used_childs_mask = 0x00;
+	uint32_t max_depth = 256;
 
-	void set_used_child(svo_model *child)
-	{
-		if (child == &childs[0])
-		{
-			used_childs_mask |= 0x01;
-			return;
-		}
-		if (child == &childs[1])
-		{
-			used_childs_mask |= 0x02;
-			return;
-		}
-		if (child == &childs[2])
-		{
-			used_childs_mask |= 0x04;
-			return;
-		}
-		if (child == &childs[3])
-		{
-			used_childs_mask |= 0x08;
-			return;
-		}
-		if (child == &childs[4])
-		{
-			used_childs_mask |= 0x10;
-			return;
-		}
-		if (child == &childs[5])
-		{
-			used_childs_mask |= 0x20;
-			return;
-		}
-		if (child == &childs[6])
-		{
-			used_childs_mask |= 0x40;
-			return;
-		}
-		if (child == &childs[7])
-		{
-			used_childs_mask |= 0x80;
-			return;
+	svo_model() {}
+	svo_model(const svo_model& model) = delete;
+	svo_model(svo_model&& model) noexcept
+		: color(model.color), childs(model.childs), parent(model.parent), max_depth(model.max_depth) {
+		model.childs = nullptr;
+		model.parent = nullptr;
+	}
+	~svo_model() {
+		if (childs) {
+			delete[] childs;
 		}
 	}
+
+	svo_model& operator=(svo_model&& model) noexcept {
+		color = model.color;
+		max_depth = model.max_depth;
+		childs = model.childs;
+		parent = model.parent;
+
+		model.childs = nullptr;
+		model.parent = nullptr;
+
+		return *this;
+	}
+
 	bool create_childs()
 	{
-		if (depth == 1)
+		if (max_depth == 1)
 			return false;
 
-		uint32_t child_depth = depth - 1;
-		childs.clear();
-		childs.resize(8);
+		uint32_t child_depth = max_depth - 1;
+		if (childs) {
+			delete[] childs;
+		}
+		childs = new svo_model[8];
 		childs[0].parent = this;
-		childs[0].depth = child_depth;
+		childs[0].max_depth = child_depth;
 		childs[1].parent = this;
-		childs[1].depth = child_depth;
+		childs[1].max_depth = child_depth;
 		childs[2].parent = this;
-		childs[2].depth = child_depth;
+		childs[2].max_depth = child_depth;
 		childs[3].parent = this;
-		childs[3].depth = child_depth;
+		childs[3].max_depth = child_depth;
 		childs[4].parent = this;
-		childs[4].depth = child_depth;
+		childs[4].max_depth = child_depth;
 		childs[5].parent = this;
-		childs[5].depth = child_depth;
+		childs[5].max_depth = child_depth;
 		childs[6].parent = this;
-		childs[6].depth = child_depth;
+		childs[6].max_depth = child_depth;
 		childs[7].parent = this;
-		childs[7].depth = child_depth;
-
-		if (parent != nullptr)
-			parent->set_used_child(this);
+		childs[7].max_depth = child_depth;
 
 		return true;
 	}
 
 	bool is_terminal()
 	{
-		return childs.empty();
+		return childs == nullptr;
+	}
+
+	uint8_t my_child_num() {
+		if (parent == nullptr)
+			return 255;
+		if (&parent->childs[0] == this)
+			return 0;
+		if (&parent->childs[1] == this)
+			return 1;
+		if (&parent->childs[2] == this)
+			return 2;
+		if (&parent->childs[3] == this)
+			return 3;
+		if (&parent->childs[4] == this)
+			return 4;
+		if (&parent->childs[5] == this)
+			return 5;
+		if (&parent->childs[6] == this)
+			return 6;
+		if (&parent->childs[7] == this)
+			return 7;
+	}
+
+	void generator_random() {
+		if (max_depth == 1) {
+			color = olc::Pixel(rand(), rand(), rand(), 255);
+			return;
+		}
+
+		create_childs();
+		uint8_t mask = rand();
+		for (uint8_t i = 0; i < 8; i++) {
+			if (mask & (1 << i)) {
+				childs[i].generator_random();
+			}
+			else {
+				childs[i].color = olc::BLANK;
+			}
+		}
+	}
+
+	void generator_total_split() {
+		if (max_depth == 1) {
+			color = olc::Pixel(rand(), rand(), rand(), 255);
+			return;
+		}
+
+		create_childs();
+		for (int i = 0; i < 8; i++) {
+			childs[i].generator_total_split();
+		}
+	}
+
+	void generator_random_2() {
+		if (max_depth == 1) {
+			color = olc::Pixel(rand(), rand(), rand(), 255);
+			return;
+		}
+
+		if (!(rand() & 3)) {
+			color = olc::Pixel(rand(), rand(), rand(), 255);
+			return;
+		}
+
+		create_childs();
+		uint8_t mask = rand();
+		for (uint8_t i = 0; i < 8; i++) {
+			if (mask & (1 << i)) {
+				childs[i].generator_random_2();
+			}
+			else {
+				childs[i].color = olc::BLANK;
+			}
+		}
 	}
 };
 
 class GameObject
 {
 public:
-	vu3d size;
+	vd3d size;
 	vd3d pos;
 	svo_model model;
 };
@@ -337,8 +391,8 @@ class Camera
 public:
 	vd3d pos;
 	double hAngle, vAngle;
-	const double move_speed = 0.1;
-	const double turn_speed = 0.01;
+	double move_speed = 0.1;
+	double turn_speed = 0.02;
 	const double fovH = M_PI / 2; // 90 degree
 	const double fovV = M_PI / 3; // 60 degree
 
@@ -504,30 +558,15 @@ protected:
 	bool OnUserCreate() override
 	{
 		svo_model model;
-		model.depth = 3;
-		model.create_childs();
-		model.childs[0].create_childs();
-		model.childs[1].color = olc::GREEN;
-		model.childs[2].color = olc::YELLOW;
-		model.childs[3].color = olc::BLUE;
-		model.childs[4].color = olc::DARK_RED;
-		model.childs[5].color = olc::DARK_GREEN;
-		model.childs[6].color = olc::DARK_YELLOW;
-		model.childs[7].color = olc::DARK_BLUE;
+		srand(time(nullptr));
 
-		model.childs[0].childs[0].color = olc::RED;
-		model.childs[0].childs[1].color = olc::GREEN;
-		model.childs[0].childs[2].color = olc::YELLOW;
-		model.childs[0].childs[3].color = olc::BLUE;
-		model.childs[0].childs[4].color = olc::DARK_RED;
-		model.childs[0].childs[5].color = olc::DARK_GREEN;
-		model.childs[0].childs[6].color = olc::DARK_YELLOW;
-		model.childs[0].childs[7].color = olc::DARK_BLUE;
+		model.max_depth = 10;
+		model.generator_random_2();
 
-		testObject.model = model;
-		testObject.pos = {-2, -2, -2};
-		uint32_t size = 1 << (model.depth - 1);
-		testObject.size = {size, size, size};
+		testObject.model = std::move(model);
+		testObject.pos = { -2.0, -2.0, -2.0 };
+		double size = 4.0;
+		testObject.size = { size, size, size };
 
 		setWorkerThreads(1);
 
@@ -540,6 +579,7 @@ protected:
 	{
 		std::unique_lock<std::mutex> ul(mut);
 
+		// Controls
 		if (GetKey(olc::ESCAPE).bPressed)
 			return false;
 
@@ -562,7 +602,11 @@ protected:
 				setWorkerThreads(8);
 		}
 
-		// Movement
+		if (GetKey(olc::MINUS).bPressed)
+			player_view.move_speed /= 2.0;
+		if (GetKey(olc::EQUALS).bPressed)
+			player_view.move_speed *= 2.0;
+
 		if (GetKey(olc::W).bHeld)
 			player_view.moveW();
 		if (GetKey(olc::A).bHeld)
@@ -580,16 +624,23 @@ protected:
 		if (GetKey(olc::E).bHeld)
 			player_view.turnRight();
 
+		if (GetKey(olc::P).bPressed)
+			std::cout << "Pause" << std::endl;
+
 		// Render
 		Clear(olc::BLACK);
 
-		vd3d vert = player_view.perp_vert() * std::tan(player_view.fovV / 2.0);
-		vd3d hor = player_view.perp_hor() * std::tan(player_view.fovH / 2.0);
+		const double multiplier = 10.0;
 
-		vd3d luCorner = player_view.pos + player_view.norm_direction() + vert - hor;
-		vd3d ruCorner = player_view.pos + player_view.norm_direction() + vert + hor;
-		vd3d lbCorner = player_view.pos + player_view.norm_direction() - vert - hor;
-		vd3d rbCorner = player_view.pos + player_view.norm_direction() - vert + hor;
+		vd3d vert = player_view.perp_vert() * std::tan(player_view.fovV / 2.0) / multiplier;
+		vd3d hor = player_view.perp_hor() * std::tan(player_view.fovH / 2.0) / multiplier;
+
+		vd3d norm_dir = player_view.norm_direction() / multiplier;
+
+		vd3d luCorner = player_view.pos + norm_dir + vert - hor;
+		vd3d ruCorner = player_view.pos + norm_dir + vert + hor;
+		vd3d lbCorner = player_view.pos + norm_dir - vert - hor;
+		vd3d rbCorner = player_view.pos + norm_dir - vert + hor;
 
 		vd3d deltaY = (lbCorner - luCorner) / ScreenHeight();
 		vd3d deltaX = (ruCorner - luCorner) / ScreenWidth();
@@ -737,9 +788,9 @@ protected:
 
 		double txm = 0.5 * (tx0 + tx1);
 
-		uint8_t curr_node = firstNodeX(ray_source, node_1);
-
 		vd3d half_node = node_1 * 0.5;
+
+		uint8_t curr_node = firstNodeX(ray_source, half_node);
 
 		do {
 			olc::Pixel pix;
@@ -806,9 +857,9 @@ protected:
 
 		double tym = 0.5 * (ty0 + ty1);
 
-		uint8_t curr_node = firstNodeY(ray_source, node_1);
-
 		vd3d half_node = node_1 * 0.5;
+
+		uint8_t curr_node = firstNodeY(ray_source, half_node);
 
 		do {
 			olc::Pixel pix;
@@ -875,9 +926,9 @@ protected:
 
 		double tzm = 0.5 * (tz0 + tz1);
 
-		uint8_t curr_node = firstNodeZ(ray_source, node_1);
-
 		vd3d half_node = node_1 * 0.5;
+
+		uint8_t curr_node = firstNodeZ(ray_source, half_node);
 
 		do {
 			olc::Pixel pix;
@@ -1363,10 +1414,10 @@ protected:
 					vd3d left = luCorner + deltaY * y;
 					for (uint32_t x = left_x; x < right_x; x++)
 					{
-						vd3d raySource = left + deltaX * x;
-						vd3d rayDir = raySource - player_view.pos;
+						vd3d rayPoint = left + deltaX * x;
+						vd3d rayDir = rayPoint - player_view.pos;
 
-						olc::Pixel pix = rayParameter(&testObject.model, testObject.pos, testObject.pos + testObject.size, raySource, rayDir);
+						olc::Pixel pix = rayParameter(&testObject.model, testObject.pos, testObject.pos + testObject.size, player_view.pos, rayDir);
 						Draw(x, y, pix);
 					}
 				}
