@@ -243,7 +243,7 @@ struct svo_model
 	}
 	~svo_model() {}
 
-	bool is_terminal() {
+	inline bool is_terminal() {
 		return childs_id == no_childs;
 	}
 
@@ -314,23 +314,6 @@ private:
 	//			childs[i].material_id = 255;
 	//		}
 	//	}
-	//}
-
-	//void generator_slope(GameObject& go) {
-	//	if (max_depth == 1) {
-	//		material_id = rand() % 255;
-	//		return;
-	//	}
-
-	//	create_childs();
-	//	childs[2].material_id = 255;
-	//	childs[0].generator_slope();
-	//	childs[3].generator_slope();
-	//	childs[6].generator_slope();
-	//	childs[1].material_id = rand() % 255;
-	//	childs[4].material_id = rand() % 255;
-	//	childs[5].material_id = rand() % 255;
-	//	childs[7].material_id = rand() % 255;
 	//}
 
 	//void generator_sphere_corner(GameObject& go) {
@@ -441,6 +424,20 @@ public:
 		}
 		return true;
 	}
+	//bool generateModelSerpinsky(uint8_t depth) {
+	//	if (depth == 0)
+	//		return false;
+
+	//	clear();
+
+	//	depth = std::min(depth, max_depth);
+
+	//	if (!_generateModelSerpinsky()) {
+	//		clear();
+	//		return false;
+	//	}
+	//	return true;
+	//}
 
 
 	void clear() {
@@ -753,13 +750,58 @@ struct worker {
 };
 
 
+enum axis : uint8_t {
+	None = 0,
+	X = 1,
+	Y = 2,
+	Z = 3,
+};
+
+std::ostream& operator<<(std::ostream& os, const axis& axis) {
+	switch (axis)
+	{
+	case X:
+		os << "X";
+		break;
+	case Y:
+		os << "Y";
+		break;
+	case Z:
+		os << "Z";
+		break;
+	case None:
+	default:
+		os << "None";
+		break;
+	}
+
+	return os;
+}
+
 struct ray_render_info {
+	vd3d ray_source = {};
+	vd3d ray_direction = {};
 	svo_model* model = nullptr;
 	uint8_t depth = 0;
 	uint8_t max_depth = 0;
-	uint8_t func_calls = 0;
+	uint16_t func_calls = 0;
+	double axis_param = 0.0;
 	double param = 0.0;
+	axis axis = axis::None;
+
+	friend std::ostream& operator<<(std::ostream& os, const ray_render_info& rri);
 };
+
+std::ostream& operator<<(std::ostream& os, const ray_render_info& rri) {
+	os << "ray_source: " << rri.ray_source << '\n'
+		<< "ray_direction: " << rri.ray_direction << '\n'
+		<< "depth: " << (uint32_t)rri.depth << '\n'
+		<< "max_depth: " << (uint32_t)rri.max_depth << '\n'
+		<< "func_calls: " << (uint32_t)rri.func_calls << '\n'
+		<< "axis_param: " << rri.axis_param << '\n'
+		<< "param: " << rri.param << '\n'
+		<< "axis: " << rri.axis << '\n';
+}
 
 
 class SVOGame;
@@ -802,15 +844,16 @@ protected:
 		stop_x = ScreenWidth();
 		stop_y = ScreenHeight();
 		
-		uint8_t depth = 10;
+		uint8_t depth = 3;
 		double size = 16.0;
 		testObject.pos = { 0.0, -size / 2.0, -size / 2.0 };
 		testObject.size = { size, size, size };
-		if (!testObject.generateModelSphere(depth))
+		if (!testObject.generateModelSlope(depth))
 			std::cout << "Error on creating model" << std::endl;
 		
 
 		render_funcs.push_back(&SVOGame::RenderDefault);
+		render_funcs.push_back(&SVOGame::RenderLength);
 		render_funcs.push_back(&SVOGame::RenderDepth);
 		render_funcs.push_back(&SVOGame::RenderMaxDepth);
 		render_funcs.push_back(&SVOGame::RenderFuncCalls);
@@ -883,7 +926,7 @@ protected:
 		// Render
 		Clear(olc::BLACK);
 
-		const double multiplier = 2000.0;
+		const double multiplier = 1000.0;
 
 		vd3d vert = player_view.perp_vert() * std::tan(player_view.fovV / 2.0) / multiplier;
 		vd3d hor = player_view.perp_hor() * std::tan(player_view.fovH / 2.0) / multiplier;
@@ -933,6 +976,9 @@ protected:
 		unsigned char a = 0;
 		ray_render_info rri;
 
+		rri.ray_source = ray_source;
+		rri.ray_direction = ray_dir;
+
 		ray_source -= go.pos;
 
 		if (ray_dir.x < 0.0)
@@ -956,11 +1002,11 @@ protected:
 
 		if (ray_dir.x == 0.0) {
 			if (ray_source.x < 0.0 || ray_source.x >= go.size.x)
-				return { nullptr, 0, 0, 0, 0.0 };
+				return rri;
 
 			if (ray_dir.y == 0.0) {
 				if (ray_source.y < 0.0 || ray_source.y >= go.size.y)
-					return { nullptr, 0, 0, 0, 0.0 };
+					return rri;
 				double divZ = 1.0 / ray_dir.z;
 				double tz0 = -ray_source.z * divZ;
 				double tz1 = (go.size.z - ray_source.z) * divZ;
@@ -969,7 +1015,7 @@ protected:
 			}
 			else if (ray_dir.z == 0.0) {
 				if (ray_source.z < 0.0 || ray_source.z >= go.size.z)
-					return { nullptr, 0, 0, 0, 0.0 };
+					return rri;
 				double divY = 1.0 / ray_dir.y;
 				double ty0 = -ray_source.y * divY;
 				double ty1 = (go.size.y - ray_source.y) * divY;
@@ -988,10 +1034,10 @@ protected:
 		}
 		if (ray_dir.y == 0.0) {
 			if (ray_source.y < 0.0 || ray_source.y >= go.size.y)
-				return { nullptr, 0, 0, 0, 0.0 };
+				return rri;
 			if (ray_dir.z == 0.0) {
 				if (ray_source.z < 0.0 || ray_source.z >= go.size.z)
-					return { nullptr, 0, 0, 0, 0.0 };
+					return rri;
 				double divX = 1.0 / ray_dir.x;
 				double tx0 = -ray_source.x * divX;
 				double tx1 = (go.size.x - ray_source.x) * divX;
@@ -1010,7 +1056,7 @@ protected:
 		}
 		if (ray_dir.z == 0.0) {
 			if (ray_source.z < 0.0 || ray_source.z >= go.size.z)
-				return { nullptr, 0, 0, 0, 0.0 };
+				return rri;
 			double divX = 1.0 / ray_dir.x;
 			double divY = 1.0 / ray_dir.y;
 			double tx0 = -ray_source.x * divX;
@@ -1045,74 +1091,70 @@ protected:
 		if (tx1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
 			ray_info.param = tx0;
+			ray_info.axis_param = std::abs(ray_info.ray_direction.x);
+			ray_info.axis = axis::X;
 			return;
 		}
 
 		double txm = 0.5 * (tx0 + tx1);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
-		uint8_t curr_node = firstNodeX(ray_source, half_node);
+		uint8_t curr_node = firstNodeX(ray_source, node_1);
 
 		do {
 			switch (curr_node) {
 			case 0:
-				procSubtreeX(tx0, txm, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(tx0, txm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(1);
 				break;
 			case 1:
-				procSubtreeX(txm, tx1, go, &go.getChilds(node->childs_id)[a ^ 1], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(txm, tx1, go, go.getChilds(node->childs_id) + (a ^ 1), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 2:
-				procSubtreeX(tx0, txm, go, &go.getChilds(node->childs_id)[a ^ 2], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(tx0, txm, go, go.getChilds(node->childs_id) + (a ^ 2), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(3);
 				break;
 			case 3:
-				procSubtreeX(txm, tx1, go, &go.getChilds(node->childs_id)[a ^ 3], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(txm, tx1, go, go.getChilds(node->childs_id) + (a ^ 3), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 4:
-				procSubtreeX(tx0, txm, go, &go.getChilds(node->childs_id)[a ^ 4], depth + 1, a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(tx0, txm, go, go.getChilds(node->childs_id) + (a ^ 4), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(5);
 				break;
 			case 5:
-				procSubtreeX(txm, tx1, go, &go.getChilds(node->childs_id)[a ^ 5], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(txm, tx1, go, go.getChilds(node->childs_id) + (a ^ 5), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 6:
-				procSubtreeX(tx0, txm, go, &go.getChilds(node->childs_id)[a ^ 6], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(tx0, txm, go, go.getChilds(node->childs_id) + (a ^ 6), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(7);
 				break;
 			case 7:
-				procSubtreeX(txm, tx1, go, &go.getChilds(node->childs_id)[a ^ 7], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeX(txm, tx1, go, go.getChilds(node->childs_id) + (a ^ 7), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			}
@@ -1126,74 +1168,70 @@ protected:
 		if (ty1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
 			ray_info.param = ty0;
+			ray_info.axis_param = std::abs(ray_info.ray_direction.y);
+			ray_info.axis = axis::Y;
 			return;
 		}
 
 		double tym = 0.5 * (ty0 + ty1);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
-		uint8_t curr_node = firstNodeY(ray_source, half_node);
+		uint8_t curr_node = firstNodeY(ray_source, node_1);
 
 		do {
 			switch (curr_node) {
 			case 0:
-				procSubtreeY(ty0, tym, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(ty0, tym, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(2);
 				break;
 			case 1:
-				procSubtreeY(ty0, tym, go, &go.getChilds(node->childs_id)[a ^ 1], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(ty0, tym, go, go.getChilds(node->childs_id) + (a ^ 1), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(3);
 				break;
 			case 2:
-				procSubtreeY(tym, ty1, go, &go.getChilds(node->childs_id)[a ^ 2], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(tym, ty1, go, go.getChilds(node->childs_id) + (a ^ 2), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 3:
-				procSubtreeY(tym, ty1, go, &go.getChilds(node->childs_id)[a ^ 3], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(tym, ty1, go, go.getChilds(node->childs_id) + (a ^ 3), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 4:
-				procSubtreeY(ty0, tym, go, &go.getChilds(node->childs_id)[a ^ 4], depth + 1, a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(ty0, tym, go, go.getChilds(node->childs_id) + (a ^ 4), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(6);
 				break;
 			case 5:
-				procSubtreeY(ty0, tym, go, &go.getChilds(node->childs_id)[a ^ 5], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(ty0, tym, go, go.getChilds(node->childs_id) + (a ^ 5), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(7);
 				break;
 			case 6:
-				procSubtreeY(tym, ty1, go, &go.getChilds(node->childs_id)[a ^ 6], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(tym, ty1, go, go.getChilds(node->childs_id) + (a ^ 6), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 7:
-				procSubtreeY(tym, ty1, go, &go.getChilds(node->childs_id)[a ^ 7], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeY(tym, ty1, go, go.getChilds(node->childs_id) + (a ^ 7), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			}
@@ -1207,74 +1245,70 @@ protected:
 		if (tz1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
 			ray_info.param = tz0;
+			ray_info.axis_param = std::abs(ray_info.ray_direction.z);
+			ray_info.axis = axis::Z;
 			return;
 		}
 
 		double tzm = 0.5 * (tz0 + tz1);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
-		uint8_t curr_node = firstNodeZ(ray_source, half_node);
+		uint8_t curr_node = firstNodeZ(ray_source, node_1);
 
 		do {
 			switch (curr_node) {
 			case 0:
-				procSubtreeZ(tz0, tzm, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tz0, tzm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(4);
 				break;
 			case 1:
-				procSubtreeZ(tz0, tzm, go, &go.getChilds(node->childs_id)[a ^ 1], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tz0, tzm, go, go.getChilds(node->childs_id) + (a ^ 1), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(5);
 				break;
 			case 2:
-				procSubtreeZ(tz0, tzm, go, &go.getChilds(node->childs_id)[a ^ 2], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tz0, tzm, go, go.getChilds(node->childs_id) + (a ^ 2), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(6);
 				break;
 			case 3:
-				procSubtreeZ(tz0, tzm, go, &go.getChilds(node->childs_id)[a ^ 3], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tz0, tzm, go, go.getChilds(node->childs_id) + (a ^ 3), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(7);
 				break;
 			case 4:
-				procSubtreeZ(tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 4], depth + 1, a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 4), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 5:
-				procSubtreeZ(tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 5], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 5), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 6:
-				procSubtreeZ(tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 6], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 6), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			case 7:
-				procSubtreeZ(tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 7], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeZ(tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 7), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode1D(8);
 				break;
 			}
@@ -1288,75 +1322,79 @@ protected:
 		if (tx1 < 0.0 || ty1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = std::min(tx0, ty0);
+			// max
+			if (tx0 > ty0) {
+				ray_info.param = tx0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.x);
+				ray_info.axis = axis::X;
+			}
+			else {
+				ray_info.param = ty0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.y);
+				ray_info.axis = axis::Y;
+			}
 			return;
 		}
 
 		double txm = 0.5 * (tx0 + tx1);
 		double tym = 0.5 * (ty0 + ty1);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
-		uint8_t curr_node = firstNodeXY(tx0, ty0, txm, tym, ray_source.z, half_node.z);
+		uint8_t curr_node = firstNodeXY(tx0, ty0, txm, tym, ray_source.z, node_1.z);
 
 		do {
 			switch (curr_node) {
 			case 0:
-				procSubtreeXY(tx0, ty0, txm, tym, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(tx0, ty0, txm, tym, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 1, tym, 2);
 				break;
 			case 1:
-				procSubtreeXY(txm, ty0, tx1, tym, go, &go.getChilds(node->childs_id)[a ^ 1], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(txm, ty0, tx1, tym, go, go.getChilds(node->childs_id) + (a ^ 1), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, tym, 3);
 				break;
 			case 2:
-				procSubtreeXY(tx0, tym, txm, ty1, go, &go.getChilds(node->childs_id)[a ^ 2], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(tx0, tym, txm, ty1, go, go.getChilds(node->childs_id) + (a ^ 2), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 3, ty1, 8);
 				break;
 			case 3:
-				procSubtreeXY(txm, tym, tx1, ty1, go, &go.getChilds(node->childs_id)[a ^ 3], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(txm, tym, tx1, ty1, go, go.getChilds(node->childs_id) + (a ^ 3), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, ty1, 8);
 				break;
 			case 4:
-				procSubtreeXY(tx0, ty0, txm, tym, go, &go.getChilds(node->childs_id)[a ^ 4], depth + 1, a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(tx0, ty0, txm, tym, go, go.getChilds(node->childs_id) + (a ^ 4), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 5, tym, 6);
 				break;
 			case 5:
-				procSubtreeXY(txm, ty0, tx1, tym, go, &go.getChilds(node->childs_id)[a ^ 5], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(txm, ty0, tx1, tym, go, go.getChilds(node->childs_id) + (a ^ 5), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, tym, 7);
 				break;
 			case 6:
-				procSubtreeXY(tx0, tym, txm, ty1, go, &go.getChilds(node->childs_id)[a ^ 6], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(tx0, tym, txm, ty1, go, go.getChilds(node->childs_id) + (a ^ 6), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 7, ty1, 8);
 				break;
 			case 7:
-				procSubtreeXY(txm, tym, tx1, ty1, go, &go.getChilds(node->childs_id)[a ^ 7], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXY(txm, tym, tx1, ty1, go, go.getChilds(node->childs_id) + (a ^ 7), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, ty1, 8);
 				break;
 			}
@@ -1370,75 +1408,79 @@ protected:
 		if (tx1 < 0.0 || tz1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = std::min(tx0, tz0);
+			// max
+			if (tx0 > tz0) {
+				ray_info.param = tx0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.x);
+				ray_info.axis = axis::X;
+			}
+			else {
+				ray_info.param = tz0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.z);
+				ray_info.axis = axis::Z;
+			}
 			return;
 		}
 
 		double txm = 0.5 * (tx0 + tx1);
 		double tzm = 0.5 * (tz0 + tz1);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
-		uint8_t curr_node = firstNodeXZ(tx0, tz0, txm, tzm, ray_source.y, half_node.y);
+		uint8_t curr_node = firstNodeXZ(tx0, tz0, txm, tzm, ray_source.y, node_1.y);
 
 		do {
 			switch (curr_node) {
 			case 0:
-				procSubtreeXZ(tx0, tz0, txm, tzm, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(tx0, tz0, txm, tzm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 1, tzm, 4);
 				break;
 			case 1:
-				procSubtreeXZ(txm, tz0, tx1, tzm, go, &go.getChilds(node->childs_id)[a ^ 1], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(txm, tz0, tx1, tzm, go, go.getChilds(node->childs_id) + (a ^ 1), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, tzm, 5);
 				break;
 			case 2:
-				procSubtreeXZ(tx0, tz0, txm, tzm, go, &go.getChilds(node->childs_id)[a ^ 2], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(tx0, tz0, txm, tzm, go, go.getChilds(node->childs_id) + (a ^ 2), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 3, tzm, 6);
 				break;
 			case 3:
-				procSubtreeXZ(txm, tz0, tx1, tzm, go, &go.getChilds(node->childs_id)[a ^ 3], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(txm, tz0, tx1, tzm, go, go.getChilds(node->childs_id) + (a ^ 3), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, tzm, 7);
 				break;
 			case 4:
-				procSubtreeXZ(tx0, tzm, txm, tz1, go, &go.getChilds(node->childs_id)[a ^ 4], depth + 1, a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(tx0, tzm, txm, tz1, go, go.getChilds(node->childs_id) + (a ^ 4), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 5, tz1, 8);
 				break;
 			case 5:
-				procSubtreeXZ(txm, tzm, tx1, tz1, go, &go.getChilds(node->childs_id)[a ^ 5], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(txm, tzm, tx1, tz1, go, go.getChilds(node->childs_id) + (a ^ 5), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, tz1, 8);
 				break;
 			case 6:
-				procSubtreeXZ(tx0, tzm, txm, tz1, go, &go.getChilds(node->childs_id)[a ^ 6], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(tx0, tzm, txm, tz1, go, go.getChilds(node->childs_id) + (a ^ 6), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(txm, 7, tz1, 8);
 				break;
 			case 7:
-				procSubtreeXZ(txm, tzm, tx1, tz1, go, &go.getChilds(node->childs_id)[a ^ 7], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXZ(txm, tzm, tx1, tz1, go, go.getChilds(node->childs_id) + (a ^ 7), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tx1, 8, tz1, 8);
 				break;
 			}
@@ -1452,75 +1494,79 @@ protected:
 		if (ty1 < 0.0 || tz1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = std::min(ty0, tz0);
+			// max
+			if (ty0 > tz0) {
+				ray_info.param = ty0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.y);
+				ray_info.axis = axis::Y;
+			}
+			else {
+				ray_info.param = tz0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.z);
+				ray_info.axis = axis::Z;
+			}
 			return;
 		}
 
 		double tym = 0.5 * (ty0 + ty1);
 		double tzm = 0.5 * (tz0 + tz1);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
-		uint8_t curr_node = firstNodeYZ(ty0, tz0, tym, tzm, ray_source.x, half_node.x);
+		uint8_t curr_node = firstNodeYZ(ty0, tz0, tym, tzm, ray_source.x, node_1.x);
 
 		do {
 			switch (curr_node) {
 			case 0:
-				procSubtreeYZ(ty0, tym, tz0, tzm, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(ty0, tym, tz0, tzm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tym, 2, tzm, 4);
 				break;
 			case 1:
-				procSubtreeYZ(ty0, tym, tz0, tzm, go, &go.getChilds(node->childs_id)[a ^ 1], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(ty0, tym, tz0, tzm, go, go.getChilds(node->childs_id) + (a ^ 1), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tym, 3, tzm, 5);
 				break;
 			case 2:
-				procSubtreeYZ(tym, ty1, tz0, tzm, go, &go.getChilds(node->childs_id)[a ^ 2], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(tym, ty1, tz0, tzm, go, go.getChilds(node->childs_id) + (a ^ 2), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(ty1, 8, tzm, 6);
 				break;
 			case 3:
-				procSubtreeYZ(tym, ty1, tz0, tzm, go, &go.getChilds(node->childs_id)[a ^ 3], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(tym, ty1, tz0, tzm, go, go.getChilds(node->childs_id) + (a ^ 3), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(ty1, 8, tzm, 7);
 				break;
 			case 4:
-				procSubtreeYZ(ty0, tym, tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 4], depth + 1, a, half_node, ray_source - vd3d{ 0.0, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(ty0, tym, tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 4), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tym, 6, tz1, 8);
 				break;
 			case 5:
-				procSubtreeYZ(ty0, tym, tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 5], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(ty0, tym, tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 5), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(tym, 7, tz1, 8);
 				break;
 			case 6:
-				procSubtreeYZ(tym, ty1, tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 6], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(tym, ty1, tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 6), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(ty1, 8, tz1, 8);
 				break;
 			case 7:
-				procSubtreeYZ(tym, ty1, tzm, tz1, go, &go.getChilds(node->childs_id)[a ^ 7], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeYZ(tym, ty1, tzm, tz1, go, go.getChilds(node->childs_id) + (a ^ 7), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				curr_node = nextNode2D(ty1, 8, tz1, 8);
 				break;
 			}
@@ -1535,9 +1581,33 @@ protected:
 		if (tx1 < 0.0 || ty1 < 0.0 || tz1 < 0.0)
 			return;
 		if (node->is_terminal()) {
+			if (go.materials[node->material_id].color.a != 255)
+				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = std::min(tx0, std::min(ty0, tz0));
+			// max
+			if (tx0 > ty0) {
+				if (tx0 > tz0) {
+					ray_info.param = tx0;
+					ray_info.axis_param = std::abs(ray_info.ray_direction.x);
+					ray_info.axis = axis::X;
+				}
+				else {
+					ray_info.param = tz0;
+					ray_info.axis_param = std::abs(ray_info.ray_direction.z);
+					ray_info.axis = axis::Z;
+				}
+			}
+			else if (ty0 > tz0) {
+				ray_info.param = ty0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.y);
+				ray_info.axis = axis::Y;
+			}
+			else {
+				ray_info.param = tz0;
+				ray_info.axis_param = std::abs(ray_info.ray_direction.z);
+				ray_info.axis = axis::Z;
+			}
 			return;
 		}
 
@@ -1547,93 +1617,85 @@ protected:
 
 		uint8_t currNode = firstNodeXYZ(tx0, ty0, tz0, txm, tym, tzm);
 
-		vd3d half_node = node_1 * 0.5;
+		node_1 *= 0.5;
 
 		do {
 			switch (currNode)
 			{
 			case 0:
-				procSubtreeXYZ(tx0, ty0, tz0, txm, tym, tzm, go, &go.getChilds(node->childs_id)[a], depth + 1, a, half_node, ray_source, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(tx0, ty0, tz0, txm, tym, tzm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(txm, 1, tym, 2, tzm, 4);
 				break;
 			case 1:
-				procSubtreeXYZ(txm, ty0, tz0, tx1, tym, tzm, go, &go.getChilds(node->childs_id)[1 ^ a], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(txm, ty0, tz0, tx1, tym, tzm, go, go.getChilds(node->childs_id) + (1 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(tx1, 8, tym, 3, tzm, 5);
 				break;
 			case 2:
-				procSubtreeXYZ(tx0, tym, tz0, txm, ty1, tzm, go, &go.getChilds(node->childs_id)[2 ^ a], depth + 1, a, half_node, ray_source - vd3d{ 0.0, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(tx0, tym, tz0, txm, ty1, tzm, go, go.getChilds(node->childs_id) + (2 ^ a), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(txm, 3, ty1, 8, tzm, 6);
 				break;
 			case 3:
-				procSubtreeXYZ(txm, tym, tz0, tx1, ty1, tzm, go, &go.getChilds(node->childs_id)[3 ^ a], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, 0.0 }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(txm, tym, tz0, tx1, ty1, tzm, go, go.getChilds(node->childs_id) + (3 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(tx1, 8, ty1, 8, tzm, 7);
 				break;
 			case 4:
-				procSubtreeXYZ(tx0, ty0, tzm, txm, tym, tz1, go, &go.getChilds(node->childs_id)[4 ^ a], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(tx0, ty0, tzm, txm, tym, tz1, go, go.getChilds(node->childs_id) + (4 ^ a), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(txm, 5, tym, 6, tz1, 8);
 				break;
 			case 5:
-				procSubtreeXYZ(txm, ty0, tzm, tx1, tym, tz1, go, &go.getChilds(node->childs_id)[5 ^ a], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, 0.0, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(txm, ty0, tzm, tx1, tym, tz1, go, go.getChilds(node->childs_id) + (5 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(tx1, 8, tym, 7, tz1, 8);
 				break;
 			case 6:
-				procSubtreeXYZ(tx0, tym, tzm, txm, ty1, tz1, go, &go.getChilds(node->childs_id)[6 ^ a], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(tx0, tym, tzm, txm, ty1, tz1, go, go.getChilds(node->childs_id) + (6 ^ a), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = nextNode3D(txm, 7, ty1, 8, tz1, 8);
 				break;
 			case 7:
-				procSubtreeXYZ(txm, tym, tzm, tx1, ty1, tz1, go, &go.getChilds(node->childs_id)[7 ^ a], depth + 1, a, half_node, ray_source - vd3d{ half_node.x, half_node.y, half_node.z }, ray_info);
-				if (ray_info.model != nullptr && go.materials[ray_info.model->material_id].color.a == 255)
+				procSubtreeXYZ(txm, tym, tzm, tx1, ty1, tz1, go, go.getChilds(node->childs_id) + (7 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				if (ray_info.model != nullptr)
 					return;
-				ray_info.model = nullptr;
 				currNode = 8;
 				break;
 			}
 		} while (currNode < 8);
 	}
 
-	uint8_t firstNodeX(vd3d ray_source, vd3d half_node) {
+	inline uint8_t firstNodeX(vd3d& ray_source, vd3d& half_node) {
 		uint8_t answer = 0;
 		if (ray_source.y >= half_node.y) answer |= 2;
 		if (ray_source.z >= half_node.z) answer |= 4;
 		return answer;
 	}
 
-	uint8_t firstNodeY(vd3d ray_source, vd3d half_node) {
+	inline uint8_t firstNodeY(vd3d& ray_source, vd3d& half_node) {
 		uint8_t answer = 0;
 		if (ray_source.x >= half_node.x) answer |= 1;
 		if (ray_source.z >= half_node.z) answer |= 4;
 		return answer;
 	}
 
-	uint8_t firstNodeZ(vd3d ray_source, vd3d half_node) {
+	inline uint8_t firstNodeZ(vd3d& ray_source, vd3d& half_node) {
 		uint8_t answer = 0;
 		if (ray_source.x >= half_node.x) answer |= 1;
 		if (ray_source.y >= half_node.y) answer |= 2;
 		return answer;
 	}
 
-	uint8_t firstNodeXY(double tx0, double ty0, double txm, double tym, double ray_source_z, double half_node_z) {
+	inline uint8_t firstNodeXY(double tx0, double ty0, double txm, double tym, double ray_source_z, double half_node_z) {
 		uint8_t answer = 0;
 		if (ray_source_z >= half_node_z) answer |= 4;
 		if (tym < tx0) return (answer | 2);
@@ -1641,7 +1703,7 @@ protected:
 		return answer;
 	}
 
-	uint8_t firstNodeXZ(double tx0, double tz0, double txm, double tzm, double ray_source_y, double half_node_y) {
+	inline uint8_t firstNodeXZ(double tx0, double tz0, double txm, double tzm, double ray_source_y, double half_node_y) {
 		uint8_t answer = 0;
 		if (ray_source_y >= half_node_y) answer |= 2;
 		if (tzm < tx0) return (answer | 4);
@@ -1649,7 +1711,7 @@ protected:
 		return answer;
 	}
 
-	uint8_t firstNodeYZ(double ty0, double tz0, double tym, double tzm, double ray_source_x, double half_node_x) {
+	inline uint8_t firstNodeYZ(double ty0, double tz0, double tym, double tzm, double ray_source_x, double half_node_x) {
 		uint8_t answer = 0;
 		if (ray_source_x >= half_node_x) answer |= 1;
 		if (tzm < ty0) return (answer | 4);
@@ -1657,7 +1719,7 @@ protected:
 		return answer;
 	}
 
-	uint8_t firstNodeXYZ(double tx0, double ty0, double tz0, double txm, double tym, double tzm)
+	inline uint8_t firstNodeXYZ(double tx0, double ty0, double tz0, double txm, double tym, double tzm)
 	{
 		uint8_t answer = 0;
 		if (tx0 > ty0)
@@ -1689,15 +1751,15 @@ protected:
 		return answer;
 	}
 
-	uint8_t nextNode1D(uint8_t x) {
+	inline uint8_t nextNode1D(uint8_t x) {
 		return x;
 	}
 
-	uint8_t nextNode2D(double tx, uint8_t x, double ty, uint8_t y) {
+	inline uint8_t nextNode2D(double tx, uint8_t x, double ty, uint8_t y) {
 		return tx < ty ? x : y;
 	}
 
-	uint8_t nextNode3D(double txm, uint8_t x, double tym, uint8_t y, double tzm, uint8_t z)
+	inline uint8_t nextNode3D(double txm, uint8_t x, double tym, uint8_t y, double tzm, uint8_t z)
 	{
 		if (txm < tym)
 		{
@@ -1729,26 +1791,24 @@ protected:
 		for (int i = 0; i < workers.size(); i++) {
 			workers[i].thread = std::thread(&worker::job, &workers[i], std::ref(work_cv), std::ref(complete_cv));
 
-			uint32_t left_x = ScreenWidth() * i / workers.size();
-			uint32_t right_x = ScreenWidth() * (i + 1) / workers.size();
-
-			workers[i]._job = [&, left_x, right_x, height = ScreenHeight()](vd3d luCorner, vd3d deltaX, vd3d deltaY) {
+			workers[i]._job = [&, height = ScreenHeight(), width = ScreenWidth(), start = i, count = workers.size()](vd3d luCorner, vd3d deltaX, vd3d deltaY) {
 				for (uint32_t y = 0; y < height; y++)
 				{
 					vd3d left = luCorner + deltaY * y;
-					for (uint32_t x = left_x; x < right_x; x++)
+					for (uint32_t x = start; x < width; x += count)
 					{
 						vd3d rayPoint = left + deltaX * x;
 						vd3d rayDir = rayPoint - player_view.pos;
 
+						ray_render_info ret = rayParameter(testObject, rayPoint, rayDir);
+						std::invoke(*render_func_it, *this, x, y, std::ref(testObject), std::ref(ret));
+
 						if (x == stop_x && y == stop_y) {
 							stop_x = ScreenWidth();
 							stop_y = ScreenHeight();
-							std::cout << "Pause" << std::endl;
+							//std::cout << "Pause" << std::endl;
+							std::cout << ret << std::endl;
 						}
-
-						ray_render_info ret = rayParameter(testObject, rayPoint, rayDir);
-						std::invoke(*render_func_it, *this, x, y, std::ref(testObject), std::ref(ret));
 					}
 				}
 
@@ -1767,6 +1827,15 @@ protected:
 	void RenderDefault(uint32_t x, uint32_t y, GameObject& go, ray_render_info& rri) {
 		if (rri.model)
 			Draw(x, y, go.materials[rri.model->material_id].color);
+		else
+			Draw(x, y, olc::BLANK);
+	}
+
+	void RenderLength(uint32_t x, uint32_t y, GameObject& go, ray_render_info& rri) {
+		double n = rri.param;
+		double a = 0.0001;
+		if (rri.model)
+			Draw(x, y, olc::PixelF(0.5 * sin(a * n) + 0.5, 0.5 * sin(a * n + 2.094) + 0.5, 0.5 * sin(a * n + 4.188) + 0.5));
 		else
 			Draw(x, y, olc::BLANK);
 	}
