@@ -1,5 +1,6 @@
 #define OLC_PGE_APPLICATION
 #define _USE_MATH_DEFINES
+#define SVO_RENDER_V2
 #include "olcPixelGameEngine.h"
 #include <thread>
 #include <condition_variable>
@@ -96,7 +97,7 @@ struct v3d_generic
 	operator v3d_generic<double>() const { return {static_cast<double>(this->x), static_cast<double>(this->y), static_cast<double>(this->z)}; }
 
 	//custom
-	v3d_generic sum() const { return this->x + this->y + this->z; }
+	double sum() const { return this->x + this->y + this->z; }
 	v3d_generic rotate(v3d_generic &a, double angle)
 	{
 		double c = std::cos(angle), s = std::sin(angle), cc = 1 - c;
@@ -109,6 +110,8 @@ struct v3d_generic
 		//double c = std::cos(angle), s = std::sin(angle);
 		//return (*this * c) + k.cross(*this) * s + k * k.dot(*this) * (1 - c);
 	}
+	T max_value() const { return std::max(x, std::max(y, z)); }
+	T min_value() const { return std::min(x, std::min(y, z)); }
 };
 
 typedef v3d_generic<int32_t> vi3d;
@@ -504,22 +507,20 @@ private:
 			return false;
 
 		svo_model* childs = child_nodes[model.childs_id];
-		if (!_generateModelSphere(depth - 1, childs[0], x0, y0, z0, xm, ym, zm))
+		if (
+			!_generateModelSphere(depth - 1, childs[0], x0, y0, z0, xm, ym, zm) ||
+			!_generateModelSphere(depth - 1, childs[1], xm, y0, z0, x1, ym, zm) ||
+			!_generateModelSphere(depth - 1, childs[2], x0, ym, z0, xm, y1, zm) ||
+			!_generateModelSphere(depth - 1, childs[3], xm, ym, z0, x1, y1, zm) ||
+			!_generateModelSphere(depth - 1, childs[4], x0, y0, zm, xm, ym, z1) ||
+			!_generateModelSphere(depth - 1, childs[5], xm, y0, zm, x1, ym, z1) ||
+			!_generateModelSphere(depth - 1, childs[6], x0, ym, zm, xm, y1, z1) ||
+			!_generateModelSphere(depth - 1, childs[7], xm, ym, zm, x1, y1, z1)
+		) {
 			return false;
-		if (!_generateModelSphere(depth - 1, childs[1], xm, y0, z0, x1, ym, zm))
-			return false;
-		if (!_generateModelSphere(depth - 1, childs[2], x0, ym, z0, xm, y1, zm))
-			return false;
-		if (!_generateModelSphere(depth - 1, childs[3], xm, ym, z0, x1, y1, zm))
-			return false;
-		if (!_generateModelSphere(depth - 1, childs[4], x0, y0, zm, xm, ym, z1))
-			return false;
-		if (!_generateModelSphere(depth - 1, childs[5], xm, y0, zm, x1, ym, z1))
-			return false;
-		if (!_generateModelSphere(depth - 1, childs[6], x0, ym, zm, xm, y1, z1))
-			return false;
-		if (!_generateModelSphere(depth - 1, childs[7], xm, ym, zm, x1, y1, z1))
-			return false;
+		}
+
+		model.material_id = childs[0].material_id;
 
 		return true;
 	}
@@ -543,6 +544,8 @@ private:
 		childs[5].material_id = rand() % 255;
 		childs[7].material_id = rand() % 255;
 
+		model.material_id = childs[0].material_id;
+
 		return true;
 	}
 	bool _generateModelTotalSplit(uint8_t depth, svo_model& model) {
@@ -556,14 +559,20 @@ private:
 			return false;
 
 		svo_model* childs = child_nodes[model.childs_id];
-		_generateModelTotalSplit(depth - 1, childs[0]);
-		_generateModelTotalSplit(depth - 1, childs[1]);
-		_generateModelTotalSplit(depth - 1, childs[2]);
-		_generateModelTotalSplit(depth - 1, childs[3]);
-		_generateModelTotalSplit(depth - 1, childs[4]);
-		_generateModelTotalSplit(depth - 1, childs[5]);
-		_generateModelTotalSplit(depth - 1, childs[6]);
-		_generateModelTotalSplit(depth - 1, childs[7]);
+		if (
+			!_generateModelTotalSplit(depth - 1, childs[0]) ||
+			!_generateModelTotalSplit(depth - 1, childs[1]) ||
+			!_generateModelTotalSplit(depth - 1, childs[2]) ||
+			!_generateModelTotalSplit(depth - 1, childs[3]) ||
+			!_generateModelTotalSplit(depth - 1, childs[4]) ||
+			!_generateModelTotalSplit(depth - 1, childs[5]) ||
+			!_generateModelTotalSplit(depth - 1, childs[6]) ||
+			!_generateModelTotalSplit(depth - 1, childs[7])
+		) {
+			return false;
+		}
+
+		model.material_id = childs[0].material_id;
 
 		return true;
 	}
@@ -750,7 +759,7 @@ struct worker {
 };
 
 
-enum axis : uint8_t {
+enum class axis : uint8_t {
 	None = 0,
 	X = 1,
 	Y = 2,
@@ -760,16 +769,16 @@ enum axis : uint8_t {
 std::ostream& operator<<(std::ostream& os, const axis& axis) {
 	switch (axis)
 	{
-	case X:
+	case axis::X:
 		os << "X";
 		break;
-	case Y:
+	case axis::Y:
 		os << "Y";
 		break;
-	case Z:
+	case axis::Z:
 		os << "Z";
 		break;
-	case None:
+	case axis::None:
 	default:
 		os << "None";
 		break;
@@ -801,7 +810,13 @@ std::ostream& operator<<(std::ostream& os, const ray_render_info& rri) {
 		<< "axis_param: " << rri.axis_param << '\n'
 		<< "param: " << rri.param << '\n'
 		<< "axis: " << rri.axis << '\n';
+	return os;
 }
+
+
+struct config {
+	double min_view_size = 0.00001;
+};
 
 
 class SVOGame;
@@ -822,6 +837,7 @@ protected:
 	Camera player_view = Camera(-5.0, 0.0, 0.0);
 	Space3D space;
 	GameObject testObject;
+	config config;
 
 	uint32_t stop_x, stop_y;
 
@@ -844,11 +860,11 @@ protected:
 		stop_x = ScreenWidth();
 		stop_y = ScreenHeight();
 		
-		uint8_t depth = 3;
+		uint8_t depth = 7;
 		double size = 16.0;
 		testObject.pos = { 0.0, -size / 2.0, -size / 2.0 };
 		testObject.size = { size, size, size };
-		if (!testObject.generateModelSlope(depth))
+		if (!testObject.generateModelSphere(depth))
 			std::cout << "Error on creating model" << std::endl;
 		
 
@@ -918,6 +934,11 @@ protected:
 				render_func_it = render_funcs.begin();
 		}
 
+		if (GetKey(olc::T).bPressed)
+			config.min_view_size -= 0.000001;
+		if (GetKey(olc::G).bPressed)
+			config.min_view_size += 0.000001;
+
 		if (GetMouse(0).bPressed) {
 			stop_x = GetMouseX();
 			stop_y = GetMouseY();
@@ -958,6 +979,7 @@ protected:
 		coords << "mouse dir: " << (luCorner + deltaY * mousePos.y + deltaX * mousePos.x - player_view.pos).str() << '\n';
 		coords << "move_speed: " << player_view.move_speed << '\n';
 		coords << "worker threads: " << workers.size() << '\n';
+		coords << "config.min_view_size: " << config.min_view_size << '\n';
 		DrawString(0, 0, coords.str());
 
 		return true;
@@ -971,6 +993,210 @@ protected:
 
 	
 protected:
+	ray_render_info rayParameterV2(GameObject& go, vd3d ray_source, vd3d ray_dir) {
+		unsigned char a = 0;
+		ray_render_info rri;
+
+		rri.ray_source = ray_source;
+		rri.ray_direction = ray_dir;
+
+		ray_source -= go.pos;
+
+		if (ray_dir.x < 0.0)
+		{
+			ray_source.x = go.size.x - ray_source.x;
+			ray_dir.x = -ray_dir.x;
+			a |= 1;
+		}
+		if (ray_dir.y < 0.0)
+		{
+			ray_source.y = go.size.y - ray_source.y;
+			ray_dir.y = -ray_dir.y;
+			a |= 2;
+		}
+		if (ray_dir.z < 0.0)
+		{
+			ray_source.z = go.size.z - ray_source.z;
+			ray_dir.z = -ray_dir.z;
+			a |= 4;
+		}
+
+		if (ray_dir.x == 0.0) {
+			if (ray_source.x < 0.0 || ray_source.x >= go.size.x)
+				return rri;
+			ray_dir.x = 0.0000000001;
+		}
+		if (ray_dir.y == 0.0) {
+			if (ray_source.y < 0.0 || ray_source.y >= go.size.y)
+				return rri;
+			ray_dir.y = 0.0000000001;
+		}
+		if (ray_dir.z == 0.0) {
+			if (ray_source.z < 0.0 || ray_source.z >= go.size.z)
+				return rri;
+			ray_dir.z = 0.0000000001;
+		}
+
+		double divX = 1.0 / ray_dir.x;
+		double divY = 1.0 / ray_dir.y;
+		double divZ = 1.0 / ray_dir.z;
+
+		double tx0 = -ray_source.x * divX;
+		double tx1 = (go.size.x - ray_source.x) * divX;
+		double ty0 = -ray_source.y * divY;
+		double ty1 = (go.size.y - ray_source.y) * divY;
+		double tz0 = -ray_source.z * divZ;
+		double tz1 = (go.size.z - ray_source.z) * divZ;
+
+		double txm = (tx0 + tx1) * 0.5;
+		double tym = (ty0 + ty1) * 0.5;
+		double tzm = (tz0 + tz1) * 0.5;
+
+		if (std::max(tx0, std::max(ty0, tz0)) >= std::min(tx1, std::min(ty1, tz1)))
+			return rri;
+
+		if (tx1 < 0.0 || ty1 < 0.0 || tz1 < 0.0)
+			return rri;
+
+		struct stack_struct {
+			vd3d t0;
+			vd3d tm;
+			vd3d t1;
+			vd3d node_size;
+			svo_model* node = nullptr;
+			uint8_t child_id = 0;
+		};
+		stack_struct stack[11];
+		int32_t stack_idx = 0;
+		uint8_t depth = 1;
+		stack[0] = {
+			{ tx0, ty0, tz0 },
+			{ txm, tym, tzm },
+			{ tx1, ty1, tz1 },
+			go.size,
+			&go.top_node,
+			firstNodeXYZ(tx0, ty0, tz0, txm, tym, tzm),
+		};
+
+		auto nextNode = [this](uint8_t current, vd3d& tm, vd3d& t1) {
+			switch (current) {
+			case 0:
+				return nextNode3D(tm.x, 1, tm.y, 2, tm.z, 4);
+			case 1:
+				return nextNode3D(t1.x, 8, tm.y, 3, tm.z, 5);
+			case 2:
+				return nextNode3D(tm.x, 3, t1.y, 8, tm.z, 6);
+			case 3:
+				return nextNode3D(t1.x, 8, t1.y, 8, tm.z, 7);
+			case 4:
+				return nextNode3D(tm.x, 5, tm.y, 6, t1.z, 8);
+			case 5:
+				return nextNode3D(t1.x, 8, tm.y, 7, t1.z, 8);
+			case 6:
+				return nextNode3D(tm.x, 7, t1.y, 8, t1.z, 8);
+			case 7:
+				return nextNode3D(t1.x, 8, t1.y, 8, t1.z, 8);
+			default:
+				return uint8_t(8);
+			}
+		};
+
+		while (stack_idx >= 0) {
+			rri.max_depth = std::max(rri.max_depth, depth);
+			rri.func_calls++;
+
+			stack_struct& current_stack = stack[stack_idx];
+			vd3d& t0 = current_stack.t0;
+			vd3d& tm = current_stack.tm;
+			vd3d& t1 = current_stack.t1;
+			vd3d& node_size = current_stack.node_size;
+			svo_model* node = current_stack.node;
+			uint8_t& child_id = current_stack.child_id;
+
+			if (child_id == 8) {
+				stack_idx--;
+				depth--;
+				continue;
+			}
+
+			svo_model* child = go.getChilds(node->childs_id) + (child_id ^ a);
+			vd3d child_t0 = {
+				child_id & 0x01 ? tm.x : t0.x,
+				child_id & 0x02 ? tm.y : t0.y,
+				child_id & 0x04 ? tm.z : t0.z,
+			};
+			vd3d child_t1 = {
+				child_id & 0x01 ? t1.x : tm.x,
+				child_id & 0x02 ? t1.y : tm.y,
+				child_id & 0x04 ? t1.z : tm.z,
+			};
+			vd3d child_tm = (child_t0 + child_t1) * 0.5;
+
+			if (child_t1.x < 0.0 || child_t1.y < 0.0 || child_t1.z < 0.0) {
+				child_id = nextNode(child_id, tm, t1);
+				if (child_id == 8) {
+					stack_idx--;
+					depth--;
+				}
+				continue;
+			}
+			double param = child_t0.max_value();
+			if (
+				child->is_terminal() ||
+				std::abs(node_size.sum() / param) < config.min_view_size
+			) {
+				if (go.materials[child->material_id].color.a != 255) {
+					child_id = nextNode(child_id, tm, t1);
+					if (child_id == 8) {
+						stack_idx--;
+						depth--;
+					}
+					continue;
+				}
+				rri.model = child;
+				rri.depth = depth;
+				rri.param = param;
+				// max
+				if (t0.x > t0.y) {
+					if (t0.x > t0.z) {
+						rri.axis_param = rri.ray_direction.x;
+						rri.axis = axis::X;
+					}
+					else {
+						rri.axis_param = rri.ray_direction.z;
+						rri.axis = axis::Z;
+					}
+				}
+				else if (t0.y > t0.z) {
+					rri.axis_param = rri.ray_direction.y;
+					rri.axis = axis::Y;
+				}
+				else {
+					rri.axis_param = rri.ray_direction.z;
+					rri.axis = axis::Z;
+				}
+				break;
+			}
+
+			child_id = nextNode(child_id, tm, t1);
+			uint8_t next_child_id = firstNodeXYZ(
+				child_t0.x, child_t0.y, child_t0.z,
+				child_tm.x, child_tm.y, child_tm.z
+			);
+			stack_idx++;
+			depth++;
+			stack[stack_idx] = {
+				child_t0,
+				child_tm,
+				child_t1,
+				node_size * 0.5,
+				child,
+				next_child_id,
+			};
+		}
+		return rri;
+	}
+
 	ray_render_info rayParameter(GameObject& go, vd3d ray_source, vd3d ray_dir)
 	{
 		unsigned char a = 0;
@@ -1080,7 +1306,7 @@ protected:
 		double tz1 = (go.size.z - ray_source.z) * divZ;
 
 		if (std::max(tx0, std::max(ty0, tz0)) < std::min(tx1, std::min(ty1, tz1)))
-			procSubtreeXYZ(tx0, ty0, tz0, tx1, ty1, tz1, go, &go.top_node, 1, a, go.size, ray_source, rri);
+			procSubtreeXYZ(tx0, ty0, tz0, tx1, ty1, tz1, go, &go.top_node, 1, a, go.size, rri);
 		return rri;
 	}
 
@@ -1090,12 +1316,16 @@ protected:
 
 		if (tx1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = tx0;
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = tx0;
+			ray_info.param = param;
 			ray_info.axis_param = std::abs(ray_info.ray_direction.x);
 			ray_info.axis = axis::X;
 			return;
@@ -1167,12 +1397,16 @@ protected:
 
 		if (ty1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = ty0;
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = ty0;
+			ray_info.param = param;
 			ray_info.axis_param = std::abs(ray_info.ray_direction.y);
 			ray_info.axis = axis::Y;
 			return;
@@ -1244,12 +1478,16 @@ protected:
 
 		if (tz1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = tz0;
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
-			ray_info.param = tz0;
+			ray_info.param = param;
 			ray_info.axis_param = std::abs(ray_info.ray_direction.z);
 			ray_info.axis = axis::Z;
 			return;
@@ -1321,19 +1559,23 @@ protected:
 
 		if (tx1 < 0.0 || ty1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = std::max(tx0, ty0);
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
 			// max
 			if (tx0 > ty0) {
-				ray_info.param = tx0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.x);
 				ray_info.axis = axis::X;
 			}
 			else {
-				ray_info.param = ty0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.y);
 				ray_info.axis = axis::Y;
 			}
@@ -1407,19 +1649,23 @@ protected:
 
 		if (tx1 < 0.0 || tz1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = std::max(tx0, tz0);
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
 			// max
 			if (tx0 > tz0) {
-				ray_info.param = tx0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.x);
 				ray_info.axis = axis::X;
 			}
 			else {
-				ray_info.param = tz0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.z);
 				ray_info.axis = axis::Z;
 			}
@@ -1493,19 +1739,23 @@ protected:
 
 		if (ty1 < 0.0 || tz1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = std::max(ty0, tz0);
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
 			ray_info.depth = depth;
 			// max
 			if (ty0 > tz0) {
-				ray_info.param = ty0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.y);
 				ray_info.axis = axis::Y;
 			}
 			else {
-				ray_info.param = tz0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.z);
 				ray_info.axis = axis::Z;
 			}
@@ -1573,14 +1823,18 @@ protected:
 		} while (curr_node < 8);
 	}
 
-	void procSubtreeXYZ(double tx0, double ty0, double tz0, double tx1, double ty1, double tz1, GameObject& go, svo_model* node, uint8_t depth, uint8_t a, vd3d node_1, vd3d ray_source, ray_render_info& ray_info)
+	void procSubtreeXYZ(double tx0, double ty0, double tz0, double tx1, double ty1, double tz1, GameObject& go, svo_model* node, uint8_t depth, uint8_t a, vd3d node_1, ray_render_info& ray_info)
 	{
 		ray_info.max_depth = std::max(ray_info.max_depth, depth);
 		ray_info.func_calls++;
 
 		if (tx1 < 0.0 || ty1 < 0.0 || tz1 < 0.0)
 			return;
-		if (node->is_terminal()) {
+		double param = std::max(tx0, std::max(ty0, tz0));
+		if (
+			node->is_terminal() ||
+			std::abs(node_1.sum() / param) < config.min_view_size
+		) {
 			if (go.materials[node->material_id].color.a != 255)
 				return;
 			ray_info.model = node;
@@ -1588,23 +1842,23 @@ protected:
 			// max
 			if (tx0 > ty0) {
 				if (tx0 > tz0) {
-					ray_info.param = tx0;
+					ray_info.param = param;
 					ray_info.axis_param = std::abs(ray_info.ray_direction.x);
 					ray_info.axis = axis::X;
 				}
 				else {
-					ray_info.param = tz0;
+					ray_info.param = param;
 					ray_info.axis_param = std::abs(ray_info.ray_direction.z);
 					ray_info.axis = axis::Z;
 				}
 			}
 			else if (ty0 > tz0) {
-				ray_info.param = ty0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.y);
 				ray_info.axis = axis::Y;
 			}
 			else {
-				ray_info.param = tz0;
+				ray_info.param = param;
 				ray_info.axis_param = std::abs(ray_info.ray_direction.z);
 				ray_info.axis = axis::Z;
 			}
@@ -1623,49 +1877,49 @@ protected:
 			switch (currNode)
 			{
 			case 0:
-				procSubtreeXYZ(tx0, ty0, tz0, txm, tym, tzm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_source, ray_info);
+				procSubtreeXYZ(tx0, ty0, tz0, txm, tym, tzm, go, go.getChilds(node->childs_id) + (a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(txm, 1, tym, 2, tzm, 4);
 				break;
 			case 1:
-				procSubtreeXYZ(txm, ty0, tz0, tx1, tym, tzm, go, go.getChilds(node->childs_id) + (1 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, 0.0 }, ray_info);
+				procSubtreeXYZ(txm, ty0, tz0, tx1, tym, tzm, go, go.getChilds(node->childs_id) + (1 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(tx1, 8, tym, 3, tzm, 5);
 				break;
 			case 2:
-				procSubtreeXYZ(tx0, tym, tz0, txm, ty1, tzm, go, go.getChilds(node->childs_id) + (2 ^ a), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, 0.0 }, ray_info);
+				procSubtreeXYZ(tx0, tym, tz0, txm, ty1, tzm, go, go.getChilds(node->childs_id) + (2 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(txm, 3, ty1, 8, tzm, 6);
 				break;
 			case 3:
-				procSubtreeXYZ(txm, tym, tz0, tx1, ty1, tzm, go, go.getChilds(node->childs_id) + (3 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, 0.0 }, ray_info);
+				procSubtreeXYZ(txm, tym, tz0, tx1, ty1, tzm, go, go.getChilds(node->childs_id) + (3 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(tx1, 8, ty1, 8, tzm, 7);
 				break;
 			case 4:
-				procSubtreeXYZ(tx0, ty0, tzm, txm, tym, tz1, go, go.getChilds(node->childs_id) + (4 ^ a), depth + 1, a, node_1, ray_source - vd3d{ 0.0, 0.0, node_1.z }, ray_info);
+				procSubtreeXYZ(tx0, ty0, tzm, txm, tym, tz1, go, go.getChilds(node->childs_id) + (4 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(txm, 5, tym, 6, tz1, 8);
 				break;
 			case 5:
-				procSubtreeXYZ(txm, ty0, tzm, tx1, tym, tz1, go, go.getChilds(node->childs_id) + (5 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, 0.0, node_1.z }, ray_info);
+				procSubtreeXYZ(txm, ty0, tzm, tx1, tym, tz1, go, go.getChilds(node->childs_id) + (5 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(tx1, 8, tym, 7, tz1, 8);
 				break;
 			case 6:
-				procSubtreeXYZ(tx0, tym, tzm, txm, ty1, tz1, go, go.getChilds(node->childs_id) + (6 ^ a), depth + 1, a, node_1, ray_source - vd3d{ 0.0, node_1.y, node_1.z }, ray_info);
+				procSubtreeXYZ(tx0, tym, tzm, txm, ty1, tz1, go, go.getChilds(node->childs_id) + (6 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = nextNode3D(txm, 7, ty1, 8, tz1, 8);
 				break;
 			case 7:
-				procSubtreeXYZ(txm, tym, tzm, tx1, ty1, tz1, go, go.getChilds(node->childs_id) + (7 ^ a), depth + 1, a, node_1, ray_source - vd3d{ node_1.x, node_1.y, node_1.z }, ray_info);
+				procSubtreeXYZ(txm, tym, tzm, tx1, ty1, tz1, go, go.getChilds(node->childs_id) + (7 ^ a), depth + 1, a, node_1, ray_info);
 				if (ray_info.model != nullptr)
 					return;
 				currNode = 8;
@@ -1800,7 +2054,11 @@ protected:
 						vd3d rayPoint = left + deltaX * x;
 						vd3d rayDir = rayPoint - player_view.pos;
 
+#ifdef SVO_RENDER_V2
+						ray_render_info ret = rayParameterV2(testObject, rayPoint, rayDir);
+#else
 						ray_render_info ret = rayParameter(testObject, rayPoint, rayDir);
+#endif
 						std::invoke(*render_func_it, *this, x, y, std::ref(testObject), std::ref(ret));
 
 						if (x == stop_x && y == stop_y) {
@@ -1832,33 +2090,33 @@ protected:
 	}
 
 	void RenderLength(uint32_t x, uint32_t y, GameObject& go, ray_render_info& rri) {
-		double n = rri.param;
-		double a = 0.0001;
+		float n = rri.param;
+		float a = 0.0001f;
 		if (rri.model)
-			Draw(x, y, olc::PixelF(0.5 * sin(a * n) + 0.5, 0.5 * sin(a * n + 2.094) + 0.5, 0.5 * sin(a * n + 4.188) + 0.5));
+			Draw(x, y, olc::PixelF(0.5f * sinf(a * n) + 0.5f, 0.5f * sin(a * n + 2.094f) + 0.5f, 0.5f * sinf(a * n + 4.188f) + 0.5f));
 		else
 			Draw(x, y, olc::BLANK);
 	}
 
 	void RenderDepth(uint32_t x, uint32_t y, GameObject& go, ray_render_info& rri) {
-		double n = rri.depth;
-		double a = 0.1;
+		float n = rri.depth;
+		float a = 0.1f;
 		if (rri.model)
-			Draw(x, y, olc::PixelF(0.5 * sin(a * n) + 0.5, 0.5 * sin(a * n + 2.094) + 0.5, 0.5 * sin(a * n + 4.188) + 0.5));
+			Draw(x, y, olc::PixelF(0.5f * sinf(a * n) + 0.5f, 0.5f * sin(a * n + 2.094f) + 0.5f, 0.5f * sinf(a * n + 4.188f) + 0.5f));
 		else
 			Draw(x, y, olc::BLANK);
 	}
 
 	void RenderMaxDepth(uint32_t x, uint32_t y, GameObject& go, ray_render_info& rri) {
-		double n = rri.max_depth;
-		double a = 0.1;
-		Draw(x, y, olc::PixelF(0.5 * sin(a * n) + 0.5, 0.5 * sin(a * n + 2.094) + 0.5, 0.5 * sin(a * n + 4.188) + 0.5));
+		float n = rri.max_depth;
+		float a = 0.1f;
+		Draw(x, y, olc::PixelF(0.5f * sinf(a * n) + 0.5f, 0.5f * sin(a * n + 2.094f) + 0.5f, 0.5f * sinf(a * n + 4.188f) + 0.5f));
 	}
 
 	void RenderFuncCalls(uint32_t x, uint32_t y, GameObject& go, ray_render_info& rri) {
-		double n = rri.func_calls;
-		double a = 0.1;
-		Draw(x, y, olc::PixelF(0.5 * sin(a * n) + 0.5, 0.5 * sin(a * n + 2.094) + 0.5, 0.5 * sin(a * n + 4.188) + 0.5));
+		float n = rri.func_calls;
+		float a = 0.1f;
+		Draw(x, y, olc::PixelF(0.5f * sinf(a * n) + 0.5f, 0.5f * sin(a * n + 2.094f) + 0.5f, 0.5f * sinf(a * n + 4.188f) + 0.5f));
 	}
 };
 
